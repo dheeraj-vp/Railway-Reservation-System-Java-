@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.SearchTrainsController" prefWidth="900" prefHeight="700" styleClass="card">
+    <children>
+        <Label text="🚂 Search &amp; Book Trains" styleClass="hero-title" />
+        <Label text="Find your perfect journey - Browse all available trains or search by route" styleClass="hero-subtitle" />
+        <Separator />
+        
+        <!-- Search Section -->
+        <VBox spacing="12" styleClass="card">
+            <children>
+                <Label text="Search by Route (Optional)" styleClass="section-title" />
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Source Station" />
+                                <TextField fx:id="sourceField" promptText="e.g., Delhi" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Destination Station" />
+                                <TextField fx:id="destinationField" promptText="e.g., Mumbai" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4" alignment="BOTTOM_LEFT">
+                            <children>
+                                <Region VBox.vgrow="ALWAYS" />
+                                <Button text="🔍 Search Trains" onAction="#handleSearchTrains" prefHeight="35" />
+                                <Button text="🔄 Show All" onAction="#handleShowAll" prefHeight="35" styleClass="button secondary" />
+                            </children>
+                        </VBox>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+        
+        <!-- Results Section -->
+        <VBox spacing="8" VBox.vgrow="ALWAYS">
+            <children>
+                <HBox alignment="CENTER_LEFT" spacing="8">
+                    <children>
+                        <Label text="Available Trains" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label fx:id="resultsCountLabel" text="" />
+                    </children>
+                </HBox>
+                <TableView fx:id="table" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn fx:id="idCol" text="Train ID" prefWidth="100" />
+                        <TableColumn fx:id="nameCol" text="Train Name" prefWidth="200" />
+                        <TableColumn fx:id="routeCol" text="Route" prefWidth="250" />
+                        <TableColumn fx:id="fareCol" text="Fare (Rs.)" prefWidth="120" />
+                        <TableColumn fx:id="seatsCol" text="Available Seats" prefWidth="130" />
+                        <TableColumn fx:id="actionCol" text="Action" prefWidth="100" />
+                    </columns>
+                </TableView>
+                <Label text="💡 Tip: Leave search fields empty and click 'Show All' to view all available trains" 
+                       styleClass="hero-subtitle" 
+                       wrapText="true" />
+            </children>
+        </VBox>
+    </children>
+</VBox>

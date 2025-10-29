@@ -1,0 +1,3720 @@
+========== src/main/java/com/railway/gui/BookingController.java ==========
+package com.railway.gui;
+
+import com.railway.dao.*;
+import com.railway.exception.InsufficientBalanceException;
+import com.railway.exception.InsufficientSeatsException;
+import com.railway.exception.InvalidBookingException;
+import com.railway.model.Booking;
+import com.railway.model.Passenger;
+import com.railway.model.Train;
+import com.railway.service.BookingService;
+import com.railway.util.FileManager;
+import javafx.fxml.FXML;
+import javafx.scene.control.*;
+
+public class BookingController {
+    @FXML private Label trainLabel;
+    @FXML private TextField nameField;
+    @FXML private TextField ageField;
+    @FXML private TextField emailField;
+    @FXML private TextField phoneField;
+    @FXML private Spinner<Integer> ticketsSpinner;
+    @FXML private TextField walletField;
+    @FXML private Label totalLabel;
+    @FXML private Label errorLabel;
+
+    private Train train;
+    private final BookingService bookingService = new BookingService(new TrainDAOImpl(), new PassengerDAOImpl(), new BookingDAOImpl());
+
+    @FXML
+    public void initialize() {
+        // Set up basic real-time validation
+        nameField.textProperty().addListener((obs, o, n) -> {
+            if (!n.matches("[a-zA-Z\\s]+")) {
+                nameField.setStyle("-fx-border-color: red;");
+            } else {
+                nameField.setStyle("");
+            }
+        });
+        emailField.textProperty().addListener((obs, o, n) -> {
+            if (!isValidEmail(n)) emailField.setStyle("-fx-border-color: red;"); else emailField.setStyle("");
+        });
+        phoneField.textProperty().addListener((obs, o, n) -> {
+            if (!n.matches("\\d{10}")) {
+                phoneField.setStyle("-fx-border-color: red;");
+            } else {
+                phoneField.setStyle("");
+            }
+        });
+        ageField.textProperty().addListener((obs, o, n) -> {
+            try {
+                int a = Integer.parseInt(n);
+                ageField.setStyle((a < 1 || a > 120) ? "-fx-border-color: red;" : "");
+            } catch (Exception ex) {
+                ageField.setStyle("-fx-border-color: red;");
+            }
+        });
+        walletField.textProperty().addListener((obs, o, n) -> {
+            try { Double.parseDouble(n); walletField.setStyle(""); }
+            catch (Exception ex) { walletField.setStyle("-fx-border-color: red;"); }
+        });
+    }
+
+    public void setTrain(Train train) {
+        this.train = train;
+        trainLabel.setText("Train: " + train.getName() + " (" + train.getId() + ")");
+        ticketsSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 10, 1));
+        updateTotal();
+        ticketsSpinner.valueProperty().addListener((obs, o, n) -> updateTotal());
+    }
+
+    private void updateTotal() {
+        int tickets = ticketsSpinner.getValue() == null ? 1 : ticketsSpinner.getValue();
+        double total = tickets * (train != null ? train.getFare() : 0.0);
+        totalLabel.setText(String.format("Total: Rs. %.2f", total));
+    }
+
+    @FXML
+    private void handleConfirmBooking() {
+        errorLabel.setText("");
+        try {
+            if (!validateForm()) {
+                errorLabel.setText("Please correct highlighted fields.");
+                return;
+            }
+            int age = Integer.parseInt(ageField.getText());
+            double wallet = Double.parseDouble(walletField.getText());
+            Passenger p = new Passenger(nameField.getText(), age, emailField.getText(), phoneField.getText(), wallet);
+            int tickets = ticketsSpinner.getValue();
+            Booking booking = bookingService.bookTickets(p, train, tickets);
+            FileManager.writeBookingConfirmation(booking);
+            // Show confirmation preview with Passenger ID
+            String preview = com.railway.util.ReportGenerator.formatBookingConfirmation(booking);
+            TextArea area = new TextArea(preview);
+            area.setEditable(false);
+            area.setWrapText(true);
+            Dialog<Void> dialog = new Dialog<>();
+            dialog.setTitle("Booking Confirmed: " + booking.getId());
+            dialog.getDialogPane().setContent(area);
+            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+            dialog.show();
+        } catch (NumberFormatException e) {
+            errorLabel.setText("Invalid numeric input");
+        } catch (InvalidBookingException | InsufficientSeatsException | InsufficientBalanceException e) {
+            errorLabel.setText(e.getMessage());
+        } catch (Exception e) {
+            errorLabel.setText("Failed: " + e.getMessage());
+        }
+    }
+
+    @FXML
+    private void handleCancel() {
+        nameField.getScene().getWindow().hide();
+    }
+
+    private void showAlert(String title, String message, Alert.AlertType type) {
+        Alert a = new Alert(type);
+        a.setTitle(title);
+        a.setHeaderText(null);
+        a.setContentText(message);
+        a.showAndWait();
+    }
+
+    private boolean validateForm() {
+        boolean ok = true;
+        if (!nameField.getText().matches("[a-zA-Z\\s]+")) ok = false;
+        try {
+            int a = Integer.parseInt(ageField.getText());
+            if (a < 1 || a > 120) ok = false;
+        } catch (Exception e) { ok = false; }
+        if (!isValidEmail(emailField.getText())) ok = false;
+        if (!phoneField.getText().matches("\\d{10}")) ok = false;
+        try { Double.parseDouble(walletField.getText()); } catch (Exception e) { ok = false; }
+        return ok;
+    }
+
+    private boolean isValidEmail(String email) {
+        return email != null && email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
+    }
+}
+
+
+========== src/main/java/com/railway/gui/MainController.java ==========
+package com.railway.gui;
+
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.control.TabPane;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+
+public class MainController {
+    @FXML private TabPane tabPane;
+
+    @FXML
+    public void handleOpenSearch(ActionEvent e) {
+        openWindow("/fxml/SearchTrainsView.fxml", "Search Trains");
+    }
+
+    @FXML
+    public void handleOpenHistory(ActionEvent e) {
+        openWindow("/fxml/BookingHistoryView.fxml", "Booking History");
+    }
+
+    @FXML
+    public void handleOpenAdmin(ActionEvent e) {
+        openWindow("/fxml/AdminDashboard.fxml", "Admin Dashboard");
+    }
+
+    private void openWindow(String fxml, String title) {
+        try {
+            Parent root = FXMLLoader.load(getClass().getResource(fxml));
+            Stage stage = new Stage();
+            stage.setTitle(title);
+            stage.initModality(Modality.NONE);
+            stage.setScene(new Scene(root));
+            stage.show();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/gui/SearchTrainsController.java ==========
+package com.railway.gui;
+
+import com.railway.dao.TrainDAO;
+import com.railway.dao.TrainDAOImpl;
+import com.railway.model.Train;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
+import javafx.scene.control.*;
+import javafx.util.Callback;
+
+import java.sql.SQLException;
+import java.util.List;
+
+public class SearchTrainsController {
+    @FXML private TextField sourceField;
+    @FXML private TextField destinationField;
+    @FXML private TableView<Train> table;
+    @FXML private TableColumn<Train, String> idCol;
+    @FXML private TableColumn<Train, String> nameCol;
+    @FXML private TableColumn<Train, String> routeCol;
+    @FXML private TableColumn<Train, Number> fareCol;
+    @FXML private TableColumn<Train, Number> seatsCol;
+    @FXML private TableColumn<Train, Void> actionCol;
+    @FXML private Label resultsCountLabel;
+
+    private final TrainDAO trainDAO = new TrainDAOImpl();
+
+    @FXML
+    public void initialize() {
+        idCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getId()));
+        nameCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getName()));
+        routeCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getRoute()));
+        fareCol.setCellValueFactory(c -> new javafx.beans.property.SimpleDoubleProperty(c.getValue().getFare()));
+        seatsCol.setCellValueFactory(c -> new javafx.beans.property.SimpleIntegerProperty(c.getValue().getAvailableSeats()));
+        addActionButton();
+        
+        // Load all trains by default
+        loadAllTrains();
+    }
+    
+    private void loadAllTrains() {
+        try {
+            List<Train> allTrains = trainDAO.getAllTrains();
+            ObservableList<Train> data = FXCollections.observableArrayList(allTrains);
+            table.setItems(data);
+            updateResultsCount(allTrains.size());
+        } catch (SQLException ex) {
+            showAlert("Error", "Failed to load trains: " + ex.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    @FXML
+    public void handleSearchTrains(ActionEvent e) {
+        String src = sourceField.getText();
+        String dst = destinationField.getText();
+        try {
+            List<Train> results = (src == null || src.isBlank() || dst == null || dst.isBlank())
+                    ? trainDAO.getAllTrains()
+                    : trainDAO.searchByRoute(src, dst);
+            ObservableList<Train> data = FXCollections.observableArrayList(results);
+            table.setItems(data);
+            updateResultsCount(results.size());
+        } catch (SQLException ex) {
+            showAlert("Error", ex.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    @FXML
+    public void handleShowAll(ActionEvent e) {
+        sourceField.clear();
+        destinationField.clear();
+        loadAllTrains();
+    }
+    
+    private void updateResultsCount(int count) {
+        if (resultsCountLabel != null) {
+            resultsCountLabel.setText("(" + count + " train" + (count != 1 ? "s" : "") + " found)");
+            resultsCountLabel.getStyleClass().add("results-count");
+        }
+    }
+
+    private void addActionButton() {
+        actionCol.setCellFactory(new Callback<>() {
+            @Override public TableCell<Train, Void> call(TableColumn<Train, Void> param) {
+                return new TableCell<>() {
+                    private final Button btn = new Button("Book");
+                    { btn.setOnAction(e -> handleBook(getTableView().getItems().get(getIndex()))); }
+                    @Override protected void updateItem(Void item, boolean empty) {
+                        super.updateItem(item, empty);
+                        setGraphic(empty ? null : btn);
+                    }
+                };
+            }
+        });
+    }
+
+    private void handleBook(Train train) {
+        try {
+            javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/fxml/BookingView.fxml"));
+            javafx.scene.Parent root = loader.load();
+            BookingController controller = loader.getController();
+            controller.setTrain(train);
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setTitle("Make Booking");
+            stage.setScene(new javafx.scene.Scene(root));
+            stage.show();
+        } catch (Exception ex) {
+            showAlert("Error", ex.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    private void showAlert(String title, String message, Alert.AlertType type) {
+        Alert a = new Alert(type);
+        a.setTitle(title);
+        a.setHeaderText(null);
+        a.setContentText(message);
+        a.showAndWait();
+    }
+}
+
+
+========== src/main/java/com/railway/gui/AdminDashboardController.java ==========
+package com.railway.gui;
+
+import com.railway.dao.*;
+import com.railway.model.*;
+import com.railway.util.BookingAnalytics;
+import com.railway.util.FileManager;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.fxml.FXML;
+import javafx.geometry.Insets;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class AdminDashboardController {
+    @FXML private VBox contentArea;
+    
+    private final BookingDAO bookingDAO = new BookingDAOImpl();
+    private final TrainDAO trainDAO = new TrainDAOImpl();
+    
+    @FXML
+    public void handleViewAllBookings() {
+        contentArea.getChildren().clear();
+        try {
+            List<Booking> bookings = bookingDAO.getAll();
+            TableView<Booking> table = createBookingsTable(bookings);
+            Button cancelBtn = new Button("Cancel Selected Booking");
+            cancelBtn.setOnAction(e -> handleCancelBooking(table));
+            contentArea.getChildren().addAll(new Label("All Bookings (" + bookings.size() + ")"), table, cancelBtn);
+        } catch (SQLException e) {
+            showAlert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    @FXML
+    public void handleViewAllTrains() {
+        contentArea.getChildren().clear();
+        try {
+            List<Train> trains = trainDAO.getAllTrains();
+            TableView<Train> table = createTrainsTable(trains);
+            contentArea.getChildren().addAll(new Label("All Trains (" + trains.size() + ")"), table);
+        } catch (SQLException e) {
+            showAlert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    @FXML
+    public void handleAddTrain() {
+        contentArea.getChildren().clear();
+        
+        Label title = new Label("Add New Train");
+        title.getStyleClass().add("section-title");
+        
+        GridPane grid = new GridPane();
+        grid.setHgap(16);
+        grid.setVgap(16);
+        grid.setPadding(new Insets(16));
+        
+        // Train ID
+        Label idLabel = new Label("Train ID *");
+        TextField idField = new TextField();
+        idField.setPromptText("e.g., T006");
+        grid.add(idLabel, 0, 0);
+        grid.add(idField, 1, 0);
+        
+        // Train Name
+        Label nameLabel = new Label("Train Name *");
+        TextField nameField = new TextField();
+        nameField.setPromptText("e.g., Express Train");
+        grid.add(nameLabel, 0, 1);
+        grid.add(nameField, 1, 1);
+        
+        // Source
+        Label sourceLabel = new Label("Source *");
+        TextField sourceField = new TextField();
+        sourceField.setPromptText("e.g., Delhi");
+        grid.add(sourceLabel, 0, 2);
+        grid.add(sourceField, 1, 2);
+        
+        // Destination
+        Label destLabel = new Label("Destination *");
+        TextField destField = new TextField();
+        destField.setPromptText("e.g., Mumbai");
+        grid.add(destLabel, 0, 3);
+        grid.add(destField, 1, 3);
+        
+        // Total Seats
+        Label seatsLabel = new Label("Total Seats *");
+        TextField seatsField = new TextField();
+        seatsField.setPromptText("e.g., 100");
+        grid.add(seatsLabel, 0, 4);
+        grid.add(seatsField, 1, 4);
+        
+        // Fare
+        Label fareLabel = new Label("Fare (Rs.) *");
+        TextField fareField = new TextField();
+        fareField.setPromptText("e.g., 1500.00");
+        grid.add(fareLabel, 0, 5);
+        grid.add(fareField, 1, 5);
+        
+        // Departure Date & Time
+        Label dateLabel = new Label("Departure Date");
+        DatePicker datePicker = new DatePicker();
+        datePicker.setValue(LocalDate.now().plusDays(7));
+        grid.add(dateLabel, 0, 6);
+        grid.add(datePicker, 1, 6);
+        
+        Label timeLabel = new Label("Departure Time");
+        Spinner<Integer> hourSpinner = new Spinner<>(0, 23, 8);
+        Spinner<Integer> minuteSpinner = new Spinner<>(0, 59, 0);
+        HBox timeBox = new HBox(4);
+        timeBox.getChildren().addAll(hourSpinner, new Label(":"), minuteSpinner);
+        hourSpinner.setPrefWidth(60);
+        minuteSpinner.setPrefWidth(60);
+        grid.add(timeLabel, 0, 7);
+        grid.add(timeBox, 1, 7);
+        
+        // Error label
+        Label errorLabel = new Label();
+        errorLabel.getStyleClass().add("error");
+        grid.add(errorLabel, 0, 8, 2, 1);
+        
+        // Buttons
+        HBox buttonBox = new HBox(12);
+        Button addBtn = new Button("➕ Add Train");
+        addBtn.setPrefWidth(150);
+        Button clearBtn = new Button("Clear Form");
+        clearBtn.setPrefWidth(150);
+        clearBtn.getStyleClass().add("button");
+        clearBtn.getStyleClass().add("secondary");
+        
+        clearBtn.setOnAction(e -> {
+            idField.clear();
+            nameField.clear();
+            sourceField.clear();
+            destField.clear();
+            seatsField.clear();
+            fareField.clear();
+            datePicker.setValue(LocalDate.now().plusDays(7));
+            hourSpinner.getValueFactory().setValue(8);
+            minuteSpinner.getValueFactory().setValue(0);
+            errorLabel.setText("");
+        });
+        
+        addBtn.setOnAction(e -> {
+            errorLabel.setText("");
+            try {
+                // Validation
+                if (idField.getText().trim().isEmpty()) {
+                    errorLabel.setText("Train ID is required");
+                    return;
+                }
+                if (nameField.getText().trim().isEmpty()) {
+                    errorLabel.setText("Train Name is required");
+                    return;
+                }
+                if (sourceField.getText().trim().isEmpty()) {
+                    errorLabel.setText("Source is required");
+                    return;
+                }
+                if (destField.getText().trim().isEmpty()) {
+                    errorLabel.setText("Destination is required");
+                    return;
+                }
+                
+                int seats;
+                double fare;
+                try {
+                    seats = Integer.parseInt(seatsField.getText().trim());
+                    if (seats <= 0) {
+                        errorLabel.setText("Seats must be greater than 0");
+                        return;
+                    }
+                } catch (NumberFormatException ex) {
+                    errorLabel.setText("Invalid seats number");
+                    return;
+                }
+                
+                try {
+                    fare = Double.parseDouble(fareField.getText().trim());
+                    if (fare < 0) {
+                        errorLabel.setText("Fare cannot be negative");
+                        return;
+                    }
+                } catch (NumberFormatException ex) {
+                    errorLabel.setText("Invalid fare amount");
+                    return;
+                }
+                
+                // Check if train ID already exists
+                Train existing = trainDAO.getById(idField.getText().trim());
+                if (existing != null) {
+                    errorLabel.setText("Train ID already exists: " + idField.getText().trim());
+                    return;
+                }
+                
+                // Create departure datetime
+                LocalDate date = datePicker.getValue() != null ? datePicker.getValue() : LocalDate.now().plusDays(7);
+                int hour = hourSpinner.getValue() != null ? hourSpinner.getValue() : 8;
+                int minute = minuteSpinner.getValue() != null ? minuteSpinner.getValue() : 0;
+                java.time.LocalDateTime departure = java.time.LocalDateTime.of(date, java.time.LocalTime.of(hour, minute));
+                
+                Train t = new Train(idField.getText().trim().toUpperCase(), 
+                                  nameField.getText().trim(),
+                                  sourceField.getText().trim(),
+                                  destField.getText().trim(),
+                                  seats, seats, // available = total initially
+                                  fare, departure);
+                
+                if (trainDAO.save(t)) {
+                    showAlert("Success", "Train added successfully!\nTrain ID: " + t.getId() + 
+                            "\nName: " + t.getName(), Alert.AlertType.INFORMATION);
+                    handleViewAllTrains(); // Refresh the trains list
+                } else {
+                    errorLabel.setText("Failed to save train to database");
+                }
+            } catch (SQLException ex) {
+                errorLabel.setText("Database error: " + ex.getMessage());
+            } catch (Exception ex) {
+                errorLabel.setText("Error: " + ex.getMessage());
+            }
+        });
+        
+        buttonBox.getChildren().addAll(addBtn, clearBtn);
+        grid.add(buttonBox, 0, 9, 2, 1);
+        
+        VBox form = new VBox(16);
+        form.getChildren().addAll(title, new Separator(), grid);
+        contentArea.getChildren().add(form);
+    }
+    
+    @FXML
+    public void handleViewStats() {
+        contentArea.getChildren().clear();
+        try {
+            List<Booking> all = bookingDAO.getAll();
+            List<Train> trains = trainDAO.getAllTrains();
+            
+            long confirmed = BookingAnalytics.confirmed(all).size();
+            double revenue = BookingAnalytics.totalRevenue(all);
+            long totalPassengers = all.stream()
+                .filter(b -> b.getPassenger() != null)
+                .map(b -> b.getPassenger().getId())
+                .distinct()
+                .count();
+            
+            Label title = new Label("System Statistics");
+            title.getStyleClass().add("section-title");
+            
+            javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+            grid.setHgap(16);
+            grid.setVgap(16);
+            
+            addStatCard(grid, "Total Trains", String.valueOf(trains.size()), 0, 0);
+            addStatCard(grid, "Total Bookings", String.valueOf(all.size()), 1, 0);
+            addStatCard(grid, "Confirmed", String.valueOf(confirmed), 0, 1);
+            addStatCard(grid, "Revenue", "Rs. " + String.format("%.2f", revenue), 1, 1);
+            addStatCard(grid, "Passengers", String.valueOf(totalPassengers), 0, 2);
+            addStatCard(grid, "Available Seats", String.valueOf(trains.stream().mapToInt(Train::getAvailableSeats).sum()), 1, 2);
+            
+            VBox stats = new VBox(16);
+            stats.getChildren().addAll(title, grid);
+            contentArea.getChildren().add(stats);
+        } catch (SQLException e) {
+            showAlert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    @FXML
+    public void handleRevenueAnalytics() {
+        contentArea.getChildren().clear();
+        try {
+            List<Booking> all = bookingDAO.getAll();
+            List<Map.Entry<String, Long>> top = BookingAnalytics.topBookedTrains(all, 5);
+            
+            VBox analytics = new VBox(8);
+            analytics.getChildren().add(new Label("Revenue Analytics"));
+            analytics.getChildren().add(new Label("Total Revenue: Rs. " + String.format("%.2f", BookingAnalytics.totalRevenue(all))));
+            analytics.getChildren().add(new Label("\nTop 5 Booked Trains:"));
+            for (Map.Entry<String, Long> e : top) {
+                analytics.getChildren().add(new Label("- " + e.getKey() + ": " + e.getValue() + " bookings"));
+            }
+            contentArea.getChildren().add(analytics);
+        } catch (Exception e) {
+            showAlert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    @FXML
+    public void handleDailyReports() {
+        contentArea.getChildren().clear();
+        TextArea area = new TextArea();
+        area.setPrefRowCount(20);
+        area.setWrapText(true);
+        
+        Button genBtn = new Button("Generate Today's Report");
+        genBtn.setOnAction(e -> {
+            try {
+                LocalDate today = LocalDate.now();
+                List<Booking> todayBookings = bookingDAO.getAll().stream()
+                    .filter(b -> b.getBookingDate().toLocalDate().equals(today))
+                    .collect(Collectors.toList());
+                
+                String report = com.railway.util.ReportGenerator.formatDailyReport(
+                    today.format(DateTimeFormatter.ISO_DATE), todayBookings);
+                area.setText(report);
+                FileManager.exportDailyReport(today, todayBookings);
+                showAlert("Success", "Report generated and saved", Alert.AlertType.INFORMATION);
+            } catch (Exception ex) {
+                showAlert("Error", ex.getMessage(), Alert.AlertType.ERROR);
+            }
+        });
+        contentArea.getChildren().addAll(new Label("Daily Reports"), genBtn, area);
+    }
+    
+    private TableView<Booking> createBookingsTable(List<Booking> bookings) {
+        TableView<Booking> table = new TableView<>();
+        TableColumn<Booking, String> idCol = new TableColumn<>("Booking ID");
+        TableColumn<Booking, String> passengerCol = new TableColumn<>("Passenger");
+        TableColumn<Booking, String> trainCol = new TableColumn<>("Train");
+        TableColumn<Booking, Number> ticketsCol = new TableColumn<>("Tickets");
+        TableColumn<Booking, String> amountCol = new TableColumn<>("Amount");
+        TableColumn<Booking, String> statusCol = new TableColumn<>("Status");
+        
+        idCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getId()));
+        passengerCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(
+            c.getValue().getPassenger() != null ? c.getValue().getPassenger().getName() : "N/A"));
+        trainCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(
+            c.getValue().getTrain() != null ? c.getValue().getTrain().getName() : "N/A"));
+        ticketsCol.setCellValueFactory(c -> new javafx.beans.property.SimpleIntegerProperty(c.getValue().getNumberOfTickets()));
+        amountCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getFormattedAmount()));
+        statusCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getStatus().toString()));
+        
+        table.getColumns().addAll(idCol, passengerCol, trainCol, ticketsCol, amountCol, statusCol);
+        table.setItems(FXCollections.observableArrayList(bookings));
+        table.setPrefHeight(400);
+        return table;
+    }
+    
+    private TableView<Train> createTrainsTable(List<Train> trains) {
+        TableView<Train> table = new TableView<>();
+        TableColumn<Train, String> idCol = new TableColumn<>("Train ID");
+        TableColumn<Train, String> nameCol = new TableColumn<>("Name");
+        TableColumn<Train, String> routeCol = new TableColumn<>("Route");
+        TableColumn<Train, Number> seatsCol = new TableColumn<>("Available");
+        TableColumn<Train, Number> fareCol = new TableColumn<>("Fare");
+        
+        idCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getId()));
+        nameCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getName()));
+        routeCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getRoute()));
+        seatsCol.setCellValueFactory(c -> new javafx.beans.property.SimpleIntegerProperty(c.getValue().getAvailableSeats()));
+        fareCol.setCellValueFactory(c -> new javafx.beans.property.SimpleDoubleProperty(c.getValue().getFare()));
+        
+        table.getColumns().addAll(idCol, nameCol, routeCol, seatsCol, fareCol);
+        table.setItems(FXCollections.observableArrayList(trains));
+        table.setPrefHeight(400);
+        return table;
+    }
+    
+    private void handleCancelBooking(TableView<Booking> table) {
+        Booking selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showAlert("Info", "Select a booking to cancel", Alert.AlertType.INFORMATION);
+            return;
+        }
+        try {
+            if (bookingDAO.cancel(selected.getId())) {
+                showAlert("Success", "Booking cancelled: " + selected.getId(), Alert.AlertType.INFORMATION);
+                handleViewAllBookings();
+            }
+        } catch (SQLException e) {
+            showAlert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+    
+    private void addStatCard(javafx.scene.layout.GridPane grid, String label, String value, int col, int row) {
+        VBox card = new VBox(8);
+        card.getStyleClass().add("stat-card");
+        card.setPrefWidth(200);
+        
+        Label valueLabel = new Label(value);
+        valueLabel.getStyleClass().add("stat-value");
+        
+        Label labelLabel = new Label(label);
+        labelLabel.getStyleClass().add("stat-label");
+        
+        card.getChildren().addAll(valueLabel, labelLabel);
+        grid.add(card, col, row);
+    }
+    
+    private void showAlert(String title, String message, Alert.AlertType type) {
+        Alert a = new Alert(type);
+        a.setTitle(title);
+        a.setHeaderText(null);
+        a.setContentText(message);
+        a.showAndWait();
+    }
+}
+========== src/main/java/com/railway/gui/MainApp.java ==========
+package com.railway.gui;
+
+import javafx.application.Application;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+
+public class MainApp extends Application {
+    @Override
+    public void start(Stage stage) throws Exception {
+        Parent root = FXMLLoader.load(getClass().getResource("/fxml/MainView.fxml"));
+        stage.setTitle("Railway Reservation System");
+        Scene scene = new Scene(root, 1000, 700);
+        scene.getStylesheets().add(getClass().getResource("/css/theme.css").toExternalForm());
+        stage.setScene(scene);
+        stage.show();
+    }
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
+
+
+========== src/main/java/com/railway/gui/BookingHistoryController.java ==========
+package com.railway.gui;
+
+import com.railway.dao.BookingDAO;
+import com.railway.dao.BookingDAOImpl;
+import com.railway.dao.PassengerDAO;
+import com.railway.dao.PassengerDAOImpl;
+import com.railway.model.Booking;
+import javafx.collections.FXCollections;
+import javafx.fxml.FXML;
+import javafx.scene.control.*;
+
+import java.sql.SQLException;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+public class BookingHistoryController {
+    @FXML private TextField passengerIdField;
+    @FXML private TextField emailField;
+    @FXML private TableView<Booking> table;
+    @FXML private TableColumn<Booking, String> idCol;
+    @FXML private TableColumn<Booking, String> trainCol;
+    @FXML private TableColumn<Booking, String> dateCol;
+    @FXML private TableColumn<Booking, Number> ticketsCol;
+    @FXML private TableColumn<Booking, String> amountCol;
+    @FXML private TableColumn<Booking, String> statusCol;
+
+    private final BookingDAO bookingDAO = new BookingDAOImpl();
+    private final PassengerDAO passengerDAO = new PassengerDAOImpl();
+    @FXML private TextArea confirmationArea;
+
+    @FXML
+    public void initialize() {
+        idCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getId()));
+        trainCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(
+                c.getValue().getTrain() != null ? c.getValue().getTrain().getId() : ""));
+        dateCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(
+                c.getValue().getBookingDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))));
+        ticketsCol.setCellValueFactory(c -> new javafx.beans.property.SimpleIntegerProperty(c.getValue().getNumberOfTickets()));
+        amountCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getFormattedAmount()));
+        statusCol.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(c.getValue().getStatus().toString()));
+        
+        // Style confirmation area
+        if (confirmationArea != null) {
+            confirmationArea.getStyleClass().add("confirmation");
+            confirmationArea.setEditable(false);
+            confirmationArea.setWrapText(true);
+        }
+    }
+
+    @FXML
+    public void handleLoad() {
+        String pid = passengerIdField.getText();
+        String email = emailField.getText();
+        
+        if ((pid == null || pid.isBlank()) && (email == null || email.isBlank())) {
+            alert("Validation", "Enter Passenger ID or Email", Alert.AlertType.WARNING);
+            return;
+        }
+        try {
+            String passengerId = pid;
+            if ((pid == null || pid.isBlank()) && !email.isBlank()) {
+                // Search by email
+                var passenger = passengerDAO.getByEmail(email);
+                if (passenger == null) {
+                    alert("Not Found", "No passenger found with email: " + email, Alert.AlertType.INFORMATION);
+                    return;
+                }
+                passengerId = passenger.getId();
+                passengerIdField.setText(passengerId); // Auto-fill for convenience
+            }
+            List<Booking> list = bookingDAO.getByPassenger(passengerId);
+            table.setItems(FXCollections.observableArrayList(list));
+            confirmationArea.clear();
+        } catch (SQLException e) {
+            alert("Error", e.getMessage(), Alert.AlertType.ERROR);
+        }
+    }
+
+    @FXML
+    public void handleViewConfirmation() {
+        Booking selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            alert("Info", "Select a booking first", Alert.AlertType.INFORMATION);
+            return;
+        }
+        String path = java.nio.file.Paths.get("data", "reports", "confirmation_" + selected.getId() + ".txt").toString();
+        try {
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(java.nio.file.Path.of(path));
+            confirmationArea.setText(String.join("\n", lines));
+        } catch (Exception ex) {
+            confirmationArea.setText("Confirmation file not found for booking " + selected.getId());
+        }
+    }
+
+    @FXML
+    public void handleCancelBooking() {
+        Booking selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            alert("Info", "Select a booking to cancel", Alert.AlertType.INFORMATION);
+            return;
+        }
+        if (selected.getStatus() == com.railway.model.BookingStatus.CANCELLED) {
+            alert("Info", "Booking already cancelled", Alert.AlertType.INFORMATION);
+            return;
+        }
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Confirm Cancellation");
+        confirm.setHeaderText("Cancel Booking: " + selected.getId());
+        confirm.setContentText("Are you sure? This action cannot be undone.");
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            try {
+                if (bookingDAO.cancel(selected.getId())) {
+                    alert("Success", "Booking cancelled: " + selected.getId(), Alert.AlertType.INFORMATION);
+                    handleLoad(); // Refresh table
+                }
+            } catch (SQLException e) {
+                alert("Error", e.getMessage(), Alert.AlertType.ERROR);
+            }
+        }
+    }
+
+    private void alert(String t, String m, Alert.AlertType type) {
+        Alert a = new Alert(type); a.setTitle(t); a.setHeaderText(null); a.setContentText(m); a.showAndWait();
+    }
+}
+
+
+
+========== src/main/java/com/railway/model/BookingStatus.java ==========
+package com.railway.model;
+
+/**
+ * Enum representing the status of a booking.
+ */
+public enum BookingStatus {
+    CONFIRMED("Confirmed"),
+    CANCELLED("Cancelled"),
+    PENDING("Pending");
+    
+    private final String displayName;
+    
+    BookingStatus(String displayName) {
+        this.displayName = displayName;
+    }
+    
+    public String getDisplayName() {
+        return displayName;
+    }
+    
+    @Override
+    public String toString() {
+        return displayName;
+    }
+}========== src/main/java/com/railway/model/Train.java ==========
+package com.railway.model;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.util.Objects;
+
+/**
+ * Represents a train in the railway reservation system.
+ */
+public class Train implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
+    private String id;
+    private String name;
+    private String source;
+    private String destination;
+    private int totalSeats;
+    private int availableSeats;
+    private double fare;
+    private LocalDateTime departureTime;
+    
+    // Default constructor
+    public Train() {}
+    
+    // Constructor with all parameters
+    public Train(String id, String name, String source, String destination, 
+                 int totalSeats, int availableSeats, double fare, LocalDateTime departureTime) {
+        this.id = id;
+        this.name = name;
+        this.source = source;
+        this.destination = destination;
+        this.totalSeats = totalSeats;
+        this.availableSeats = availableSeats;
+        this.fare = fare;
+        this.departureTime = departureTime;
+    }
+    
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+    
+    public String getDestination() { return destination; }
+    public void setDestination(String destination) { this.destination = destination; }
+    
+    public int getTotalSeats() { return totalSeats; }
+    public void setTotalSeats(int totalSeats) { this.totalSeats = totalSeats; }
+    
+    public int getAvailableSeats() { return availableSeats; }
+    public void setAvailableSeats(int availableSeats) { this.availableSeats = availableSeats; }
+    
+    public double getFare() { return fare; }
+    public void setFare(double fare) { this.fare = fare; }
+    
+    public LocalDateTime getDepartureTime() { return departureTime; }
+    public void setDepartureTime(LocalDateTime departureTime) { this.departureTime = departureTime; }
+    
+    // Utility methods
+    public boolean hasAvailableSeats(int requestedSeats) {
+        return availableSeats >= requestedSeats;
+    }
+    
+    public void bookSeats(int seats) {
+        if (seats > availableSeats) {
+            throw new IllegalArgumentException("Cannot book more seats than available");
+        }
+        this.availableSeats -= seats;
+    }
+    
+    public void cancelSeats(int seats) {
+        if (seats + availableSeats > totalSeats) {
+            throw new IllegalArgumentException("Cannot cancel more seats than total capacity");
+        }
+        this.availableSeats += seats;
+    }
+    
+    public String getRoute() {
+        return source + " -> " + destination;
+    }
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Train train = (Train) o;
+        return Objects.equals(id, train.id);
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
+    
+    @Override
+    public String toString() {
+        return "Train{" +
+                "id='" + id + '\'' +
+                ", name='" + name + '\'' +
+                ", source='" + source + '\'' +
+                ", destination='" + destination + '\'' +
+                ", totalSeats=" + totalSeats +
+                ", availableSeats=" + availableSeats +
+                ", fare=" + fare +
+                ", departureTime=" + departureTime +
+                '}';
+    }
+}========== src/main/java/com/railway/model/Passenger.java ==========
+package com.railway.model;
+
+import java.io.Serializable;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Represents a passenger in the railway reservation system.
+ */
+public class Passenger implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
+    private String id;
+    private String name;
+    private int age;
+    private String email;
+    private String phone;
+    private double walletBalance;
+    
+    // Default constructor
+    public Passenger() {
+        this.id = generateId();
+    }
+    
+    // Constructor with parameters (ID auto-generated)
+    public Passenger(String name, int age, String email, String phone, double walletBalance) {
+        this.id = generateId();
+        this.name = name;
+        this.age = age;
+        this.email = email;
+        this.phone = phone;
+        this.walletBalance = walletBalance;
+    }
+    
+    // Constructor with all parameters including ID
+    public Passenger(String id, String name, int age, String email, String phone, double walletBalance) {
+        this.id = id;
+        this.name = name;
+        this.age = age;
+        this.email = email;
+        this.phone = phone;
+        this.walletBalance = walletBalance;
+    }
+    
+    // Auto-generate passenger ID
+    private String generateId() {
+        return "P" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+    
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public int getAge() { return age; }
+    public void setAge(int age) { this.age = age; }
+    
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    
+    public String getPhone() { return phone; }
+    public void setPhone(String phone) { this.phone = phone; }
+    
+    public double getWalletBalance() { return walletBalance; }
+    public void setWalletBalance(double walletBalance) { this.walletBalance = walletBalance; }
+    
+    // Utility methods
+    public boolean hasSufficientBalance(double amount) {
+        return walletBalance >= amount;
+    }
+    
+    public void deductAmount(double amount) {
+        if (amount > walletBalance) {
+            throw new IllegalArgumentException("Insufficient balance");
+        }
+        this.walletBalance -= amount;
+    }
+    
+    public void addAmount(double amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("Amount cannot be negative");
+        }
+        this.walletBalance += amount;
+    }
+    
+    public boolean isValidAge() {
+        return age >= 1 && age <= 120;
+    }
+    
+    public boolean isValidEmail() {
+        return email != null && email.matches("^[A-Za-z0-9+_.-]+@(.+)$");
+    }
+    
+    public boolean isValidPhone() {
+        return phone != null && phone.matches("\\d{10}");
+    }
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Passenger passenger = (Passenger) o;
+        return Objects.equals(id, passenger.id);
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
+    
+    @Override
+    public String toString() {
+        return "Passenger{" +
+                "id='" + id + '\'' +
+                ", name='" + name + '\'' +
+                ", age=" + age +
+                ", email='" + email + '\'' +
+                ", phone='" + phone + '\'' +
+                ", walletBalance=" + walletBalance +
+                '}';
+    }
+}========== src/main/java/com/railway/model/Booking.java ==========
+package com.railway.model;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Represents a booking in the railway reservation system.
+ */
+public class Booking implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
+    private String id;
+    private Passenger passenger;
+    private Train train;
+    private int numberOfTickets;
+    private double totalAmount;
+    private LocalDateTime bookingDate;
+    private BookingStatus status;
+    
+    // Default constructor
+    public Booking() {
+        this.id = generateId();
+        this.bookingDate = LocalDateTime.now();
+        this.status = BookingStatus.CONFIRMED;
+    }
+    
+    // Constructor with parameters (ID auto-generated)
+    public Booking(Passenger passenger, Train train, int numberOfTickets, double totalAmount) {
+        this.id = generateId();
+        this.passenger = passenger;
+        this.train = train;
+        this.numberOfTickets = numberOfTickets;
+        this.totalAmount = totalAmount;
+        this.bookingDate = LocalDateTime.now();
+        this.status = BookingStatus.CONFIRMED;
+    }
+    
+    // Constructor with all parameters including ID
+    public Booking(String id, Passenger passenger, Train train, int numberOfTickets, 
+                   double totalAmount, LocalDateTime bookingDate, BookingStatus status) {
+        this.id = id;
+        this.passenger = passenger;
+        this.train = train;
+        this.numberOfTickets = numberOfTickets;
+        this.totalAmount = totalAmount;
+        this.bookingDate = bookingDate;
+        this.status = status;
+    }
+    
+    // Auto-generate booking ID
+    private String generateId() {
+        return "B" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+    
+    // Getters and Setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public Passenger getPassenger() { return passenger; }
+    public void setPassenger(Passenger passenger) { this.passenger = passenger; }
+    
+    public Train getTrain() { return train; }
+    public void setTrain(Train train) { this.train = train; }
+    
+    public int getNumberOfTickets() { return numberOfTickets; }
+    public void setNumberOfTickets(int numberOfTickets) { this.numberOfTickets = numberOfTickets; }
+    
+    public double getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(double totalAmount) { this.totalAmount = totalAmount; }
+    
+    public LocalDateTime getBookingDate() { return bookingDate; }
+    public void setBookingDate(LocalDateTime bookingDate) { this.bookingDate = bookingDate; }
+    
+    public BookingStatus getStatus() { return status; }
+    public void setStatus(BookingStatus status) { this.status = status; }
+    
+    // Utility methods
+    public boolean isConfirmed() {
+        return status == BookingStatus.CONFIRMED;
+    }
+    
+    public boolean isCancelled() {
+        return status == BookingStatus.CANCELLED;
+    }
+    
+    public boolean isPending() {
+        return status == BookingStatus.PENDING;
+    }
+    
+    public void cancel() {
+        this.status = BookingStatus.CANCELLED;
+    }
+    
+    public void confirm() {
+        this.status = BookingStatus.CONFIRMED;
+    }
+    
+    public void setPending() {
+        this.status = BookingStatus.PENDING;
+    }
+    
+    public String getFormattedBookingDate() {
+        return bookingDate.toString().replace("T", " ");
+    }
+    
+    public String getFormattedAmount() {
+        return String.format("Rs. %.2f", totalAmount);
+    }
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Booking booking = (Booking) o;
+        return Objects.equals(id, booking.id);
+    }
+    
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
+    
+    @Override
+    public String toString() {
+        return "Booking{" +
+                "id='" + id + '\'' +
+                ", passenger=" + (passenger != null ? passenger.getName() : "null") +
+                ", train=" + (train != null ? train.getName() : "null") +
+                ", numberOfTickets=" + numberOfTickets +
+                ", totalAmount=" + totalAmount +
+                ", bookingDate=" + bookingDate +
+                ", status=" + status +
+                '}';
+    }
+}========== src/main/java/com/railway/Main.java ==========
+package com.railway;
+
+import com.railway.model.*;
+import com.railway.exception.*;
+
+/**
+ * Main class for the Railway Reservation System.
+ * Tests Phase 1 implementation.
+ */
+public class Main {
+    
+    public static void main(String[] args) {
+        System.out.println("==========================================");
+        System.out.println("    Railway Reservation System v1.0.0");
+        System.out.println("==========================================");
+        System.out.println();
+        
+        // Test basic functionality
+        testBasicFunctionality();
+        
+        System.out.println("Phase 1: Project Setup & Core Data Models - COMPLETED");
+        System.out.println("✓ Project structure created");
+        System.out.println("✓ Core domain models implemented");
+        System.out.println("✓ Custom exceptions created");
+        System.out.println("✓ Database schema ready");
+        System.out.println("✓ Configuration files set up");
+        System.out.println();
+        System.out.println("Ready to proceed to Phase 2: Database Connectivity & DAO Layer");
+    }
+    
+    /**
+     * Test basic functionality of the core models
+     */
+    private static void testBasicFunctionality() {
+        System.out.println("Testing Core Models:");
+        System.out.println("-------------------");
+        
+        // Test Train model
+        Train train = new Train("T001", "Rajdhani Express", "Delhi", "Mumbai", 
+                               100, 100, 1500.00, java.time.LocalDateTime.now());
+        System.out.println("✓ Train created: " + train.getName());
+        System.out.println("  Route: " + train.getRoute());
+        System.out.println("  Available seats: " + train.getAvailableSeats());
+        
+        // Test Passenger model
+        Passenger passenger = new Passenger("John Doe", 35, "john@email.com", 
+                                           "9876543210", 5000.00);
+        System.out.println("✓ Passenger created: " + passenger.getName());
+        System.out.println("  ID: " + passenger.getId());
+        System.out.println("  Wallet balance: " + passenger.getWalletBalance());
+        
+        // Test Booking model
+        Booking booking = new Booking(passenger, train, 2, 3000.00);
+        System.out.println("✓ Booking created: " + booking.getId());
+        System.out.println("  Status: " + booking.getStatus());
+        System.out.println("  Amount: " + booking.getFormattedAmount());
+        
+        // Test exception handling
+        try {
+            if (!passenger.hasSufficientBalance(10000.00)) {
+                throw new InsufficientBalanceException("Insufficient balance for booking");
+            }
+        } catch (InsufficientBalanceException e) {
+            System.out.println("✓ Exception handling works: " + e.getMessage());
+        }
+        
+        // Test validation methods
+        System.out.println("✓ Passenger age validation: " + passenger.isValidAge());
+        System.out.println("✓ Passenger email validation: " + passenger.isValidEmail());
+        System.out.println("✓ Passenger phone validation: " + passenger.isValidPhone());
+        
+        System.out.println();
+    }
+}========== src/main/java/com/railway/service/BookingService.java ==========
+package com.railway.service;
+
+import com.railway.dao.BookingDAO;
+import com.railway.dao.PassengerDAO;
+import com.railway.dao.TrainDAO;
+import com.railway.exception.InsufficientBalanceException;
+import com.railway.exception.InsufficientSeatsException;
+import com.railway.exception.InvalidBookingException;
+import com.railway.model.Booking;
+import com.railway.model.BookingStatus;
+import com.railway.model.Passenger;
+import com.railway.model.Train;
+
+import java.sql.SQLException;
+
+public class BookingService {
+
+    private final Object trainLock = new Object();
+    private final Object paymentLock = new Object();
+
+    private final TrainDAO trainDAO;
+    private final PassengerDAO passengerDAO;
+    private final BookingDAO bookingDAO;
+
+    public BookingService(TrainDAO trainDAO, PassengerDAO passengerDAO, BookingDAO bookingDAO) {
+        this.trainDAO = trainDAO;
+        this.passengerDAO = passengerDAO;
+        this.bookingDAO = bookingDAO;
+    }
+
+    public Booking bookTickets(Passenger passenger, Train train, int tickets)
+            throws InvalidBookingException, InsufficientSeatsException, InsufficientBalanceException {
+
+        if (passenger == null || train == null) {
+            throw new InvalidBookingException("Passenger and Train must not be null");
+        }
+        if (tickets <= 0) {
+            throw new InvalidBookingException("Tickets must be greater than zero");
+        }
+
+        // Lock ordering: always lock train first, then payment
+        synchronized (trainLock) {
+            // Refresh entities from DB and ensure passenger exists/persisted
+            try {
+                // Prefer existing passenger by email if present
+                if (passenger.getEmail() != null && !passenger.getEmail().isBlank()) {
+                    Passenger existing = passengerDAO.getByEmail(passenger.getEmail());
+                    if (existing != null) {
+                        passenger = existing;
+                    } else {
+                        // Persist new passenger so wallet update has a row to update
+                        passengerDAO.save(passenger);
+                    }
+                } else {
+                    // No email provided, ensure row exists
+                    passengerDAO.save(passenger);
+                }
+
+                // Refresh latest train state from DB
+                Train latest = trainDAO.getById(train.getId());
+                if (latest != null) {
+                    train = latest;
+                }
+            } catch (SQLException e) {
+                throw new RuntimeException("Pre-booking load failed: " + e.getMessage(), e);
+            }
+            // Validate seats
+            if (train.getAvailableSeats() < tickets) {
+                throw new InsufficientSeatsException("Only " + train.getAvailableSeats() + " seats available");
+            }
+
+            synchronized (paymentLock) {
+                double amount = tickets * train.getFare();
+                if (passenger.getWalletBalance() < amount) {
+                    throw new InsufficientBalanceException("Insufficient balance");
+                }
+
+                try {
+                    // Update persistent state first to avoid local inconsistency on crash
+                    int newAvail = train.getAvailableSeats() - tickets;
+                    boolean seatsUpdated = trainDAO.updateAvailableSeats(train.getId(), newAvail);
+
+                    boolean walletUpdated = passengerDAO.updateWalletBalance(passenger.getId(),
+                            passenger.getWalletBalance() - amount);
+
+                    if (!seatsUpdated || !walletUpdated) {
+                        throw new RuntimeException("Failed to update seats or wallet");
+                    }
+
+                    // Update in-memory objects
+                    train.setAvailableSeats(newAvail);
+                    passenger.setWalletBalance(passenger.getWalletBalance() - amount);
+
+                    // Save booking
+                    Booking booking = new Booking(passenger, train, tickets, amount);
+                    booking.setStatus(BookingStatus.CONFIRMED);
+                    bookingDAO.save(booking);
+                    return booking;
+
+                } catch (SQLException e) {
+                    throw new RuntimeException("Booking failed: " + e.getMessage(), e);
+                }
+            }
+        }
+    }
+}
+
+
+========== src/main/java/com/railway/service/DeadlockDemo.java ==========
+package com.railway.service;
+
+public class DeadlockDemo {
+    private static final Object TRAIN_LOCK = new Object();
+    private static final Object PAYMENT_LOCK = new Object();
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread agent1 = new Thread(() -> {
+            synchronized (TRAIN_LOCK) {
+                sleep(100);
+                synchronized (PAYMENT_LOCK) {
+                    System.out.println("Agent1 completed");
+                }
+            }
+        }, "Agent1");
+
+        Thread agent2 = new Thread(() -> {
+            synchronized (PAYMENT_LOCK) {
+                sleep(100);
+                synchronized (TRAIN_LOCK) {
+                    System.out.println("Agent2 completed");
+                }
+            }
+        }, "Agent2");
+
+        agent1.start();
+        agent2.start();
+
+        // Wait a bit and report deadlock likelihood
+        Thread.sleep(1000);
+        System.out.println("If the program hangs here, a deadlock occurred (expected for demo).");
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/service/DeadlockResolution.java ==========
+package com.railway.service;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class DeadlockResolution {
+    private static final Lock TRAIN_LOCK = new ReentrantLock();
+    private static final Lock PAYMENT_LOCK = new ReentrantLock();
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread agent1 = new Thread(() -> bookWithOrdering("Agent1"));
+        Thread agent2 = new Thread(() -> bookWithOrdering("Agent2"));
+        agent1.start();
+        agent2.start();
+        agent1.join();
+        agent2.join();
+        System.out.println("Both agents completed without deadlock using consistent lock ordering.");
+    }
+
+    private static void bookWithOrdering(String name) {
+        // Always acquire TRAIN then PAYMENT
+        boolean gotTrain = false;
+        boolean gotPayment = false;
+        try {
+            gotTrain = TRAIN_LOCK.tryLock(500, TimeUnit.MILLISECONDS);
+            if (!gotTrain) { System.out.println(name + ": retry later (train)"); return; }
+            // simulate delay
+            sleep(50);
+            gotPayment = PAYMENT_LOCK.tryLock(500, TimeUnit.MILLISECONDS);
+            if (!gotPayment) { System.out.println(name + ": retry later (payment)"); return; }
+            // critical section
+            sleep(50);
+            System.out.println(name + ": booking done");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            if (gotPayment) PAYMENT_LOCK.unlock();
+            if (gotTrain) TRAIN_LOCK.unlock();
+        }
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/service/ConcurrentBookingSimulator.java ==========
+package com.railway.service;
+
+import com.railway.dao.*;
+import com.railway.exception.InsufficientBalanceException;
+import com.railway.exception.InsufficientSeatsException;
+import com.railway.exception.InvalidBookingException;
+import com.railway.model.Passenger;
+import com.railway.model.Train;
+
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.*;
+
+public class ConcurrentBookingSimulator {
+    public static void main(String[] args) throws Exception {
+        TrainDAO trainDAO = new TrainDAOImpl();
+        PassengerDAO passengerDAO = new PassengerDAOImpl();
+        BookingDAO bookingDAO = new BookingDAOImpl();
+        BookingService bookingService = new BookingService(trainDAO, passengerDAO, bookingDAO);
+
+        Train train = trainDAO.getById("T001");
+        if (train == null) {
+            System.out.println("Train T001 not found. Load schema first.");
+            return;
+        }
+
+        int threads = 10;
+        ExecutorService exec = Executors.newFixedThreadPool(threads);
+        List<Future<?>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threads; i++) {
+            futures.add(exec.submit(() -> {
+                Passenger p = new Passenger("P-" + UUID.randomUUID().toString().substring(0, 6), 30,
+                        "sim@local", "9999999999", 100000.0);
+                try {
+                    passengerDAO.save(p);
+                } catch (SQLException e) {
+                    System.out.println(Thread.currentThread().getName() + ": passenger save failed: " + e.getMessage());
+                    return;
+                }
+                try {
+                    bookingService.bookTickets(p, train, 1);
+                    System.out.println(Thread.currentThread().getName() + ": booking success");
+                } catch (InvalidBookingException | InsufficientSeatsException | InsufficientBalanceException e) {
+                    System.out.println(Thread.currentThread().getName() + ": booking failed: " + e.getMessage());
+                }
+            }));
+        }
+
+        for (Future<?> f : futures) {
+            try { f.get(); } catch (ExecutionException e) { System.out.println("Task error: " + e.getMessage()); }
+        }
+        exec.shutdown();
+
+        Train after = trainDAO.getById(train.getId());
+        System.out.println("Final available seats for " + after.getId() + ": " + after.getAvailableSeats());
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/dao/BookingDAO.java ==========
+package com.railway.dao;
+
+import com.railway.model.Booking;
+
+import java.sql.SQLException;
+import java.util.List;
+
+public interface BookingDAO {
+	boolean save(Booking booking) throws SQLException;
+	Booking getById(String bookingId) throws SQLException;
+	List<Booking> getByPassenger(String passengerId) throws SQLException;
+	List<Booking> getAll() throws SQLException;
+	boolean cancel(String bookingId) throws SQLException;
+}
+========== src/main/java/com/railway/dao/TrainDAOImpl.java ==========
+package com.railway.dao;
+
+import com.railway.model.Train;
+import com.railway.util.DBConnectionManager;
+
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+public class TrainDAOImpl implements TrainDAO {
+
+    private static Train map(ResultSet rs) throws SQLException {
+        Train t = new Train();
+        t.setId(rs.getString("train_id"));
+        t.setName(rs.getString("train_name"));
+        t.setSource(rs.getString("source"));
+        t.setDestination(rs.getString("destination"));
+        t.setTotalSeats(rs.getInt("total_seats"));
+        t.setAvailableSeats(rs.getInt("available_seats"));
+        t.setFare(rs.getDouble("fare"));
+        Timestamp ts = rs.getTimestamp("departure_time");
+        t.setDepartureTime(ts != null ? ts.toLocalDateTime() : LocalDateTime.now());
+        return t;
+    }
+
+    @Override
+    public List<Train> getAllTrains() throws SQLException {
+        String sql = "SELECT * FROM trains ORDER BY departure_time";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            List<Train> list = new ArrayList<>();
+            while (rs.next()) list.add(map(rs));
+            return list;
+        }
+    }
+
+    @Override
+    public Train getById(String trainId) throws SQLException {
+        String sql = "SELECT * FROM trains WHERE train_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, trainId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    @Override
+    public boolean updateAvailableSeats(String trainId, int availableSeats) throws SQLException {
+        String sql = "UPDATE trains SET available_seats = ? WHERE train_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, availableSeats);
+            ps.setString(2, trainId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    @Override
+    public List<Train> searchByRoute(String source, String destination) throws SQLException {
+        String sql = "SELECT * FROM trains WHERE source = ? AND destination = ? ORDER BY departure_time";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, source);
+            ps.setString(2, destination);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Train> list = new ArrayList<>();
+                while (rs.next()) list.add(map(rs));
+                return list;
+            }
+        }
+    }
+
+    @Override
+    public boolean save(Train t) throws SQLException {
+        String sql = "INSERT INTO trains(train_id, train_name, source, destination, total_seats, available_seats, fare, departure_time) " +
+                "VALUES(?,?,?,?,?,?,?,?)";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, t.getId());
+            ps.setString(2, t.getName());
+            ps.setString(3, t.getSource());
+            ps.setString(4, t.getDestination());
+            ps.setInt(5, t.getTotalSeats());
+            ps.setInt(6, t.getAvailableSeats());
+            ps.setDouble(7, t.getFare());
+            ps.setTimestamp(8, Timestamp.valueOf(t.getDepartureTime()));
+            return ps.executeUpdate() == 1;
+        }
+    }
+}
+
+
+========== src/main/java/com/railway/dao/PassengerDAO.java ==========
+package com.railway.dao;
+
+import com.railway.model.Passenger;
+
+import java.sql.SQLException;
+
+public interface PassengerDAO {
+	Passenger getById(String id) throws SQLException;
+	Passenger getByEmail(String email) throws SQLException;
+	boolean save(Passenger passenger) throws SQLException;
+	boolean updateWalletBalance(String passengerId, double amount) throws SQLException;
+}
+========== src/main/java/com/railway/dao/BookingDAOImpl.java ==========
+package com.railway.dao;
+
+import com.railway.model.Booking;
+import com.railway.model.BookingStatus;
+import com.railway.model.Passenger;
+import com.railway.model.Train;
+import com.railway.util.DBConnectionManager;
+
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+public class BookingDAOImpl implements BookingDAO {
+
+    private static Booking map(ResultSet rs) throws SQLException {
+        Booking b = new Booking();
+        b.setId(rs.getString("booking_id"));
+        Passenger p = new Passenger();
+        p.setId(rs.getString("passenger_id"));
+        b.setPassenger(p);
+        Train t = new Train();
+        t.setId(rs.getString("train_id"));
+        b.setTrain(t);
+        b.setNumberOfTickets(rs.getInt("number_of_tickets"));
+        b.setTotalAmount(rs.getDouble("total_amount"));
+        Timestamp ts = rs.getTimestamp("booking_date");
+        b.setBookingDate(ts != null ? ts.toLocalDateTime() : LocalDateTime.now());
+        b.setStatus(BookingStatus.valueOf(rs.getString("status")));
+        return b;
+    }
+
+    @Override
+    public boolean save(Booking b) throws SQLException {
+        String sql = "INSERT INTO bookings(booking_id, passenger_id, train_id, number_of_tickets, total_amount, booking_date, status) " +
+                "VALUES(?,?,?,?,?,CURRENT_TIMESTAMP,?)";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, b.getId());
+            ps.setString(2, b.getPassenger().getId());
+            ps.setString(3, b.getTrain().getId());
+            ps.setInt(4, b.getNumberOfTickets());
+            ps.setDouble(5, b.getTotalAmount());
+            ps.setString(6, b.getStatus().name());
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    @Override
+    public Booking getById(String bookingId) throws SQLException {
+        String sql = "SELECT * FROM bookings WHERE booking_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, bookingId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    @Override
+    public List<Booking> getByPassenger(String passengerId) throws SQLException {
+        String sql = "SELECT * FROM bookings WHERE passenger_id = ? ORDER BY booking_date DESC";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, passengerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Booking> list = new ArrayList<>();
+                while (rs.next()) list.add(map(rs));
+                return list;
+            }
+        }
+    }
+
+    @Override
+    public List<Booking> getAll() throws SQLException {
+        String sql = "SELECT * FROM bookings ORDER BY booking_date DESC";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            List<Booking> list = new ArrayList<>();
+            while (rs.next()) list.add(map(rs));
+            return list;
+        }
+    }
+
+    @Override
+    public boolean cancel(String bookingId) throws SQLException {
+        String sql = "UPDATE bookings SET status = 'CANCELLED' WHERE booking_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, bookingId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+}
+
+
+========== src/main/java/com/railway/dao/PassengerDAOImpl.java ==========
+package com.railway.dao;
+
+import com.railway.model.Passenger;
+import com.railway.util.DBConnectionManager;
+
+import java.sql.*;
+
+public class PassengerDAOImpl implements PassengerDAO {
+
+    private static Passenger map(ResultSet rs) throws SQLException {
+        Passenger p = new Passenger();
+        p.setId(rs.getString("passenger_id"));
+        p.setName(rs.getString("name"));
+        p.setAge(rs.getInt("age"));
+        p.setEmail(rs.getString("email"));
+        p.setPhone(rs.getString("phone"));
+        p.setWalletBalance(rs.getDouble("wallet_balance"));
+        return p;
+    }
+
+    @Override
+    public Passenger getById(String id) throws SQLException {
+        String sql = "SELECT * FROM passengers WHERE passenger_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    @Override
+    public Passenger getByEmail(String email) throws SQLException {
+        String sql = "SELECT * FROM passengers WHERE email = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, email);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? map(rs) : null;
+            }
+        }
+    }
+
+    @Override
+    public boolean save(Passenger p) throws SQLException {
+        String sql = "INSERT INTO passengers(passenger_id, name, age, email, phone, wallet_balance) VALUES(?,?,?,?,?,?)";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, p.getId());
+            ps.setString(2, p.getName());
+            ps.setInt(3, p.getAge());
+            ps.setString(4, p.getEmail());
+            ps.setString(5, p.getPhone());
+            ps.setDouble(6, p.getWalletBalance());
+            return ps.executeUpdate() == 1;
+        }
+    }
+
+    @Override
+    public boolean updateWalletBalance(String passengerId, double amount) throws SQLException {
+        String sql = "UPDATE passengers SET wallet_balance = ? WHERE passenger_id = ?";
+        try (Connection c = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setDouble(1, amount);
+            ps.setString(2, passengerId);
+            return ps.executeUpdate() == 1;
+        }
+    }
+}
+
+
+========== src/main/java/com/railway/dao/TrainDAO.java ==========
+package com.railway.dao;
+
+import com.railway.model.Train;
+
+import java.sql.SQLException;
+import java.util.List;
+
+public interface TrainDAO {
+	List<Train> getAllTrains() throws SQLException;
+	Train getById(String trainId) throws SQLException;
+	boolean updateAvailableSeats(String trainId, int availableSeats) throws SQLException;
+	List<Train> searchByRoute(String source, String destination) throws SQLException;
+	boolean save(Train train) throws SQLException;
+}
+========== src/main/java/com/railway/exception/InvalidBookingException.java ==========
+package com.railway.exception;
+
+/**
+ * Exception thrown when booking validation fails.
+ */
+public class InvalidBookingException extends Exception {
+    
+    public InvalidBookingException(String message) {
+        super(message);
+    }
+    
+    public InvalidBookingException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}========== src/main/java/com/railway/exception/TrainNotFoundException.java ==========
+package com.railway.exception;
+
+/**
+ * Exception thrown when a train with the specified ID is not found.
+ */
+public class TrainNotFoundException extends Exception {
+    
+    public TrainNotFoundException(String message) {
+        super(message);
+    }
+    
+    public TrainNotFoundException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}========== src/main/java/com/railway/exception/DatabaseConnectionException.java ==========
+package com.railway.exception;
+
+/**
+ * Exception thrown when there are issues with database connectivity.
+ */
+public class DatabaseConnectionException extends Exception {
+    
+    public DatabaseConnectionException(String message) {
+        super(message);
+    }
+    
+    public DatabaseConnectionException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}========== src/main/java/com/railway/exception/InsufficientSeatsException.java ==========
+package com.railway.exception;
+
+/**
+ * Exception thrown when the requested number of seats exceeds available seats.
+ */
+public class InsufficientSeatsException extends Exception {
+    
+    public InsufficientSeatsException(String message) {
+        super(message);
+    }
+    
+    public InsufficientSeatsException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}========== src/main/java/com/railway/exception/InsufficientBalanceException.java ==========
+package com.railway.exception;
+
+/**
+ * Exception thrown when passenger's wallet balance is insufficient.
+ */
+public class InsufficientBalanceException extends Exception {
+    
+    public InsufficientBalanceException(String message) {
+        super(message);
+    }
+    
+    public InsufficientBalanceException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}========== src/main/java/com/railway/util/DaoVerify.java ==========
+package com.railway.util;
+
+import com.railway.dao.TrainDAO;
+import com.railway.dao.TrainDAOImpl;
+import com.railway.model.Train;
+
+import java.sql.SQLException;
+import java.util.List;
+
+public class DaoVerify {
+    public static void main(String[] args) {
+        TrainDAO trainDAO = new TrainDAOImpl();
+        try {
+            List<Train> trains = trainDAO.getAllTrains();
+            System.out.println("Trains in DB: " + trains.size());
+            for (int i = 0; i < Math.min(trains.size(), 5); i++) {
+                Train t = trains.get(i);
+                System.out.println(t.getId() + " | " + t.getName() + " | " + t.getSource() + " -> " + t.getDestination());
+            }
+        } catch (SQLException e) {
+            System.out.println("DAO verification failed: " + e.getMessage());
+        }
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/BookingHistory.java ==========
+package com.railway.util;
+
+import com.railway.model.Booking;
+
+import java.time.LocalDate;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class BookingHistory {
+    private final List<Booking> bookingsList = new ArrayList<>();
+    private final Map<String, List<Booking>> passengerBookingsMap = new HashMap<>();
+    private final TreeSet<Booking> sortedBookings = new TreeSet<>(Comparator.comparing(Booking::getBookingDate));
+
+    public void addBooking(Booking booking) {
+        bookingsList.add(booking);
+        passengerBookingsMap.computeIfAbsent(booking.getPassenger().getId(), k -> new ArrayList<>()).add(booking);
+        sortedBookings.add(booking);
+    }
+
+    public List<Booking> getBookingsByPassenger(String passengerId) {
+        return passengerBookingsMap.getOrDefault(passengerId, List.of());
+    }
+
+    public List<Booking> getBookingsByDate(LocalDate date) {
+        return bookingsList.stream()
+                .filter(b -> b.getBookingDate().toLocalDate().isEqual(date))
+                .collect(Collectors.toList());
+    }
+
+    public double calculateTotalRevenue() {
+        return bookingsList.stream().mapToDouble(Booking::getTotalAmount).sum();
+    }
+
+    public List<Booking> getAll() {
+        return Collections.unmodifiableList(bookingsList);
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/CollectionsSmoke.java ==========
+package com.railway.util;
+
+import com.railway.dao.*;
+import com.railway.model.Booking;
+import com.railway.model.Train;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+public class CollectionsSmoke {
+    public static void main(String[] args) throws Exception {
+        TrainDAO trainDAO = new TrainDAOImpl();
+        BookingDAO bookingDAO = new BookingDAOImpl();
+
+        List<Train> trains = trainDAO.getAllTrains();
+        TrainScheduleManager schedule = new TrainScheduleManager();
+        trains.forEach(schedule::addTrain);
+
+        System.out.println("Routes known: " + schedule.getRouteSet().size());
+        System.out.println("Cheapest first: " + schedule.sortTrainsByFare().stream().limit(3).map(Train::getName).toList());
+
+        // Load some bookings for analytics (if any exist)
+        List<Booking> bookings = new ArrayList<>();
+        try { bookings = bookingDAO.getAll(); } catch (SQLException ignored) {}
+
+        System.out.println("Confirmed count: " + BookingAnalytics.confirmed(bookings).size());
+        System.out.println("Total revenue : Rs. " + String.format("%.2f", BookingAnalytics.totalRevenue(bookings)));
+        Map<String, List<Booking>> byTrain = BookingAnalytics.groupByTrain(bookings);
+        System.out.println("Trains with bookings: " + byTrain.keySet());
+        System.out.println("Top trains: " + BookingAnalytics.topBookedTrains(bookings, 3));
+        System.out.println("Done.");
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/BookingAnalytics.java ==========
+package com.railway.util;
+
+import com.railway.model.Booking;
+import com.railway.model.BookingStatus;
+import com.railway.model.Train;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class BookingAnalytics {
+
+    public static List<Booking> confirmed(List<Booking> bookings) {
+        return bookings.stream()
+                .filter(b -> b.getStatus() == BookingStatus.CONFIRMED)
+                .collect(Collectors.toList());
+    }
+
+    public static double totalRevenue(List<Booking> bookings) {
+        return bookings.stream().mapToDouble(Booking::getTotalAmount).sum();
+    }
+
+    public static Map<String, List<Booking>> groupByTrain(List<Booking> bookings) {
+        return bookings.stream().collect(Collectors.groupingBy(b -> b.getTrain().getId()));
+    }
+
+    public static List<Map.Entry<String, Long>> topBookedTrains(List<Booking> bookings, int limit) {
+        return bookings.stream()
+                .collect(Collectors.groupingBy(b -> {
+                    String name = b.getTrain().getName();
+                    return name != null ? name : b.getTrain().getId();
+                }, Collectors.counting()))
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    public static List<Train> filterAndSortAvailableTrains(List<Train> trains) {
+        return trains.stream()
+                .filter(t -> t.getAvailableSeats() > 10)
+                .sorted(Comparator.comparing(Train::getFare))
+                .collect(Collectors.toList());
+    }
+}
+
+
+========== src/main/java/com/railway/util/SerializationManager.java ==========
+package com.railway.util;
+
+import com.railway.model.Booking;
+
+import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SerializationManager {
+
+    public static void serializeBooking(Booking booking, String filepath) throws IOException {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(filepath)))) {
+            oos.writeObject(booking);
+        }
+    }
+
+    public static Booking deserializeBooking(String filepath) throws IOException, ClassNotFoundException {
+        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(filepath)))) {
+            return (Booking) ois.readObject();
+        }
+    }
+
+    public static void serializeBookingList(List<Booking> bookings, String filepath) throws IOException {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(filepath)))) {
+            oos.writeObject(new ArrayList<>(bookings));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<Booking> deserializeBookingList(String filepath) throws IOException, ClassNotFoundException {
+        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(filepath)))) {
+            return (List<Booking>) ois.readObject();
+        }
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/TrainScheduleManager.java ==========
+package com.railway.util;
+
+import com.railway.model.Train;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class TrainScheduleManager {
+    private final Map<String, Train> trainMap = new HashMap<>();
+    private final List<Train> trainList = new ArrayList<>();
+    private final Set<String> routeSet = new HashSet<>();
+
+    public void addTrain(Train train) {
+        trainMap.put(train.getId(), train);
+        trainList.add(train);
+        routeSet.add(train.getSource() + "->" + train.getDestination());
+    }
+
+    public Train findTrainById(String trainId) {
+        return trainMap.get(trainId);
+    }
+
+    public List<Train> filterTrainsByRoute(String source, String destination) {
+        return trainList.stream()
+                .filter(t -> t.getSource().equals(source) && t.getDestination().equals(destination))
+                .collect(Collectors.toList());
+    }
+
+    public List<Train> sortTrainsByFare() {
+        return trainList.stream()
+                .sorted(Comparator.comparing(Train::getFare))
+                .collect(Collectors.toList());
+    }
+
+    public Map<String, List<Train>> groupTrainsBySource() {
+        return trainList.stream().collect(Collectors.groupingBy(Train::getSource));
+    }
+
+    public Set<String> getRouteSet() {
+        return Collections.unmodifiableSet(routeSet);
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/DbWriteSmoke.java ==========
+package com.railway.util;
+
+import com.railway.dao.*;
+import com.railway.model.*;
+
+import java.sql.SQLException;
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+public class DbWriteSmoke {
+    public static void main(String[] args) {
+        PassengerDAO passengerDAO = new PassengerDAOImpl();
+        TrainDAO trainDAO = new TrainDAOImpl();
+        BookingDAO bookingDAO = new BookingDAOImpl();
+
+        try {
+            // 1) Ensure a train exists
+            Train train = trainDAO.getById("T001");
+            if (train == null) {
+                System.out.println("Train T001 not found; aborting write smoke test.");
+                return;
+            }
+
+            // 2) Insert a passenger
+            Passenger passenger = new Passenger("Smoke Tester", 30, "smoke.tester@local", "9999999999", 10000.0);
+            boolean pSaved = passengerDAO.save(passenger);
+            System.out.println("Passenger saved: " + pSaved + " | ID: " + passenger.getId());
+
+            // 3) Create a booking of 2 tickets
+            int tickets = 2;
+            double amount = tickets * train.getFare();
+            Booking booking = new Booking(passenger, train, tickets, amount);
+            booking.setStatus(BookingStatus.CONFIRMED);
+            boolean bSaved = bookingDAO.save(booking);
+            System.out.println("Booking saved: " + bSaved + " | ID: " + booking.getId());
+
+            // 4) Update train seats and passenger wallet to reflect the booking
+            int newAvail = train.getAvailableSeats() - tickets;
+            boolean seatsUpdated = trainDAO.updateAvailableSeats(train.getId(), newAvail);
+            boolean walletUpdated = passengerDAO.updateWalletBalance(passenger.getId(), passenger.getWalletBalance() - amount);
+            System.out.println("Seats updated: " + seatsUpdated + ", Wallet updated: " + walletUpdated);
+
+            // 5) Read back to verify
+            Train trainAfter = trainDAO.getById(train.getId());
+            System.out.println("Train " + trainAfter.getId() + " available seats after booking: " + trainAfter.getAvailableSeats());
+            Booking fetched = bookingDAO.getById(booking.getId());
+            System.out.println("Fetched booking status: " + (fetched != null ? fetched.getStatus() : null));
+
+        } catch (SQLException e) {
+            System.out.println("Write smoke failed: " + e.getMessage());
+        }
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/ReportGenerator.java ==========
+package com.railway.util;
+
+import com.railway.model.Booking;
+
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+public class ReportGenerator {
+
+    public static String formatBookingConfirmation(Booking b) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("========================================\n");
+        sb.append("        BOOKING CONFIRMATION\n");
+        sb.append("========================================\n");
+        sb.append("Booking ID    : ").append(b.getId()).append('\n');
+        sb.append("Passenger     : ").append(b.getPassenger().getName()).append('\n');
+        sb.append("Passenger ID  : ").append(b.getPassenger().getId()).append('\n');
+        sb.append("Train         : ").append(b.getTrain().getName()).append(" (").append(b.getTrain().getId()).append(")\n");
+        sb.append("Route         : ").append(b.getTrain().getSource()).append(" -> ").append(b.getTrain().getDestination()).append('\n');
+        sb.append("Tickets       : ").append(b.getNumberOfTickets()).append('\n');
+        sb.append("Amount Paid   : ").append(b.getFormattedAmount()).append('\n');
+        sb.append("Booking Date  : ").append(b.getBookingDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append('\n');
+        sb.append("Status        : ").append(b.getStatus()).append('\n');
+        sb.append("========================================\n");
+        return sb.toString();
+    }
+
+    public static String formatDailyReport(String day, List<Booking> bookings) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("===== Daily Booking Summary - ").append(day).append(" =====\n");
+        sb.append("Total bookings: ").append(bookings.size()).append('\n');
+        double total = bookings.stream().mapToDouble(Booking::getTotalAmount).sum();
+        sb.append("Total revenue : Rs. ").append(String.format("%.2f", total)).append('\n');
+        sb.append('\n');
+        for (Booking b : bookings) {
+            sb.append(b.getId()).append(" | ")
+              .append(b.getTrain().getName()).append(" | ")
+              .append(b.getPassenger().getName()).append(" | ")
+              .append(b.getNumberOfTickets()).append(" tickets | ")
+              .append(b.getFormattedAmount()).append(" | ")
+              .append(b.getStatus()).append('\n');
+        }
+        return sb.toString();
+    }
+}
+
+
+========== src/main/java/com/railway/util/DBConnectionManager.java ==========
+package com.railway.util;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Objects;
+import java.util.Properties;
+
+public class DBConnectionManager {
+    private static final String PROPERTIES_FILE = "/database.properties";
+
+    private static volatile DBConnectionManager instance;
+
+    private final String url;
+    private final String username;
+    private final String password;
+    private final String driver;
+
+    private final int poolMaxActive;
+    private final int poolMinIdle;
+    private final ArrayDeque<Connection> pool = new ArrayDeque<>();
+
+    private DBConnectionManager() {
+        Properties props = new Properties();
+        try (InputStream in = DBConnectionManager.class.getResourceAsStream(PROPERTIES_FILE)) {
+            if (in == null) {
+                throw new IllegalStateException("database.properties not found on classpath");
+            }
+            props.load(in);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load database.properties", e);
+        }
+
+        this.url = required(props, "db.url");
+        this.username = required(props, "db.username");
+        this.password = required(props, "db.password");
+        this.driver = props.getProperty("db.driver", "com.mysql.cj.jdbc.Driver");
+
+        this.poolMaxActive = parseInt(props.getProperty("db.pool.maxActive", "10"));
+        this.poolMinIdle = parseInt(props.getProperty("db.pool.minIdle", "2"));
+
+        try {
+            Class.forName(driver);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("JDBC Driver not found: " + driver, e);
+        }
+
+        // Warm up a few idle connections (best-effort)
+        for (int i = 0; i < poolMinIdle; i++) {
+            try {
+                pool.offer(createNewConnection());
+            } catch (SQLException ignored) {
+                // Best effort; continue
+            }
+        }
+    }
+
+    public static DBConnectionManager getInstance() {
+        if (instance == null) {
+            synchronized (DBConnectionManager.class) {
+                if (instance == null) {
+                    instance = new DBConnectionManager();
+                }
+            }
+        }
+        return instance;
+    }
+
+    public Connection getConnection() throws SQLException {
+        synchronized (pool) {
+            Connection conn = pool.poll();
+            if (conn != null && !conn.isClosed()) {
+                return conn;
+            }
+            return createNewConnection();
+        }
+    }
+
+    public void releaseConnection(Connection connection) {
+        if (connection == null) return;
+        synchronized (pool) {
+            if (pool.size() < poolMaxActive) {
+                pool.offer(connection);
+            } else {
+                try { connection.close(); } catch (SQLException ignored) {}
+            }
+        }
+    }
+
+    public void closeQuietly(Connection c) {
+        if (c != null) {
+            try { c.close(); } catch (SQLException ignored) {}
+        }
+    }
+
+    private Connection createNewConnection() throws SQLException {
+        return DriverManager.getConnection(url, username, password);
+    }
+
+    private static String required(Properties p, String key) {
+        String v = p.getProperty(key);
+        if (v == null || v.isBlank()) {
+            throw new IllegalStateException("Missing required property: " + key);
+        }
+        return v;
+    }
+
+    private static int parseInt(String s) {
+        try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; }
+    }
+}
+========== src/main/java/com/railway/util/FileIoSmoke.java ==========
+package com.railway.util;
+
+import com.railway.dao.*;
+import com.railway.model.*;
+
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.List;
+
+public class FileIoSmoke {
+    public static void main(String[] args) throws Exception {
+        TrainDAO trainDAO = new TrainDAOImpl();
+        PassengerDAO passengerDAO = new PassengerDAOImpl();
+        BookingDAO bookingDAO = new BookingDAOImpl();
+
+        Train train = trainDAO.getById("T001");
+        if (train == null) {
+            System.out.println("Train T001 not found. Ensure schema is loaded.");
+            return;
+        }
+
+        // Use an existing passenger if possible, else create a lightweight one
+        Passenger p;
+        try {
+            p = passengerDAO.getByEmail("filesmoke@local");
+            if (p == null) {
+                p = new Passenger("File Smoke", 29, "filesmoke@local", "9000000000", 99999);
+                passengerDAO.save(p);
+            }
+        } catch (SQLException e) {
+            System.out.println("Passenger fetch/save failed: " + e.getMessage());
+            return;
+        }
+
+        // Create a booking object (not committing transactional effects here)
+        Booking b = new Booking(p, train, 1, train.getFare());
+
+        // Write confirmation
+        FileManager.writeBookingConfirmation(b);
+        FileManager.appendBookingHistory(b);
+
+        // Serialize booking and a small list
+        Path serPath = Path.of("data", "bookings", "booking_" + b.getId() + ".ser");
+        SerializationManager.serializeBooking(b, serPath.toString());
+        SerializationManager.serializeBookingList(List.of(b), Path.of("data", "backup", "bookings_backup.ser").toString());
+
+        // Export daily report (with just this booking for demo)
+        FileManager.exportDailyReport(LocalDate.now(), List.of(b));
+
+        // Read back one
+        Booking back = SerializationManager.deserializeBooking(serPath.toString());
+        System.out.println("Deserialized booking ID: " + back.getId());
+        System.out.println("Files written under data/ (reports, bookings, backup, passengers).\nDone.");
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/DbSmoke.java ==========
+package com.railway.util;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
+public class DbSmoke {
+    public static void main(String[] args) {
+        try {
+            DBConnectionManager mgr = DBConnectionManager.getInstance();
+            try (Connection c = mgr.getConnection();
+                 PreparedStatement ps = c.prepareStatement("SELECT 1");
+                 ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    System.out.println("PostgreSQL connection OK. SELECT 1 => " + rs.getInt(1));
+                } else {
+                    System.out.println("PostgreSQL connection executed but no result.");
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("PostgreSQL connection FAILED: " + e.getMessage());
+        }
+    }
+}
+
+
+
+
+========== src/main/java/com/railway/util/FileManager.java ==========
+package com.railway.util;
+
+import com.railway.model.Booking;
+import com.railway.model.Passenger;
+import com.railway.model.Train;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class FileManager {
+    private static final Path DATA_DIR = Path.of("data");
+    private static final Path BOOKINGS_DIR = DATA_DIR.resolve("bookings");
+    private static final Path PASSENGERS_DIR = DATA_DIR.resolve("passengers");
+    private static final Path REPORTS_DIR = DATA_DIR.resolve("reports");
+    private static final Path BACKUP_DIR = DATA_DIR.resolve("backup");
+
+    public static void createDirectories() throws IOException {
+        Files.createDirectories(BOOKINGS_DIR);
+        Files.createDirectories(PASSENGERS_DIR);
+        Files.createDirectories(REPORTS_DIR);
+        Files.createDirectories(BACKUP_DIR);
+    }
+
+    public static void writeBookingConfirmation(Booking booking) throws IOException {
+        createDirectories();
+        String fileName = "confirmation_" + booking.getId() + ".txt";
+        Path filePath = REPORTS_DIR.resolve(fileName);
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(filePath.toFile(), false))) {
+            bw.write(ReportGenerator.formatBookingConfirmation(booking));
+        }
+    }
+
+    public static List<String> readBookingHistory(String passengerId) throws IOException {
+        createDirectories();
+        Path historyPath = PASSENGERS_DIR.resolve("history_" + passengerId + ".txt");
+        if (!Files.exists(historyPath)) return List.of();
+        return Files.readAllLines(historyPath);
+    }
+
+    public static void appendBookingHistory(Booking booking) throws IOException {
+        createDirectories();
+        Path historyPath = PASSENGERS_DIR.resolve("history_" + booking.getPassenger().getId() + ".txt");
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(historyPath.toFile(), true))) {
+            bw.write(booking.toString());
+            bw.newLine();
+        }
+    }
+
+    public static void exportDailyReport(LocalDate date, List<Booking> bookings) throws IOException {
+        createDirectories();
+        String day = date.format(DateTimeFormatter.ISO_DATE);
+        Path report = REPORTS_DIR.resolve("daily_bookings_" + day + ".txt");
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(report.toFile(), false))) {
+            bw.write(ReportGenerator.formatDailyReport(day, bookings));
+        }
+    }
+
+    public static void backupBookings(List<Booking> bookings) throws IOException {
+        createDirectories();
+        Path backup = BACKUP_DIR.resolve("bookings_backup.ser");
+        SerializationManager.serializeBookingList(bookings, backup.toString());
+    }
+}
+
+
+
+
+========== src/main/resources/fxml/MainView.fxml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.MainController">
+    <top>
+        <MenuBar>
+            <menus>
+                <Menu text="Home" />
+                <Menu text="Bookings" />
+                <Menu text="Admin" />
+            </menus>
+        </MenuBar>
+    </top>
+    <center>
+        <VBox spacing="16" alignment="CENTER" styleClass="card" prefWidth="800">
+            <children>
+                <Label text="Railway Reservation System" styleClass="hero-title" />
+                <Label text="Search trains, make bookings, and view confirmations" styleClass="hero-subtitle" />
+                <HBox spacing="12" alignment="CENTER">
+                    <children>
+                        <Button text="Search Trains" onAction="#handleOpenSearch" />
+                        <Button text="Booking History" onAction="#handleOpenHistory" styleClass="button secondary" />
+                        <Button text="Admin Panel" onAction="#handleOpenAdmin" styleClass="button secondary" />
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+    </center>
+</BorderPane>
+
+
+========== src/main/resources/fxml/BookingHistoryView.fxml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.BookingHistoryController" prefWidth="950" prefHeight="750" styleClass="card">
+    <children>
+        <Label text="📋 Booking History" styleClass="hero-title" />
+        <Label text="View your booking details, confirmations, and manage your reservations" styleClass="hero-subtitle" />
+        <Separator />
+        
+        <!-- Search Section -->
+        <VBox spacing="12" styleClass="card">
+            <children>
+                <Label text="Search Bookings" styleClass="section-title" />
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Passenger ID" />
+                                <TextField fx:id="passengerIdField" promptText="e.g., P12345678" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="or Email" />
+                                <TextField fx:id="emailField" promptText="e.g., user@email.com" prefWidth="200" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4" alignment="BOTTOM_LEFT">
+                            <children>
+                                <Region VBox.vgrow="ALWAYS" />
+                                <Button text="🔍 Load Bookings" onAction="#handleLoad" prefHeight="35" />
+                            </children>
+                        </VBox>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+        
+        <!-- Bookings Table -->
+        <VBox spacing="12" VBox.vgrow="ALWAYS">
+            <children>
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="Your Bookings" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button text="📄 View Confirmation" onAction="#handleViewConfirmation" styleClass="button secondary" />
+                        <Button text="❌ Cancel Booking" onAction="#handleCancelBooking" styleClass="button secondary" />
+                    </children>
+                </HBox>
+                <TableView fx:id="table" VBox.vgrow="ALWAYS" prefHeight="300">
+                    <columns>
+                        <TableColumn fx:id="idCol" text="Booking ID" prefWidth="150" />
+                        <TableColumn fx:id="trainCol" text="Train" prefWidth="180" />
+                        <TableColumn fx:id="dateCol" text="Booking Date" prefWidth="180" />
+                        <TableColumn fx:id="ticketsCol" text="Tickets" prefWidth="80" />
+                        <TableColumn fx:id="amountCol" text="Amount" prefWidth="120" />
+                        <TableColumn fx:id="statusCol" text="Status" prefWidth="120" />
+                    </columns>
+                </TableView>
+            </children>
+        </VBox>
+        
+        <!-- Confirmation Preview -->
+        <VBox spacing="8">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="📄 Confirmation Details" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                    </children>
+                </HBox>
+                <TextArea fx:id="confirmationArea" prefRowCount="8" wrapText="true" editable="false" 
+                          styleClass="card" />
+            </children>
+        </VBox>
+    </children>
+</VBox>========== src/main/resources/fxml/SearchTrainsView.fxml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.SearchTrainsController" prefWidth="900" prefHeight="700" styleClass="card">
+    <children>
+        <Label text="🚂 Search &amp; Book Trains" styleClass="hero-title" />
+        <Label text="Find your perfect journey - Browse all available trains or search by route" styleClass="hero-subtitle" />
+        <Separator />
+        
+        <!-- Search Section -->
+        <VBox spacing="12" styleClass="card">
+            <children>
+                <Label text="Search by Route (Optional)" styleClass="section-title" />
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Source Station" />
+                                <TextField fx:id="sourceField" promptText="e.g., Delhi" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Destination Station" />
+                                <TextField fx:id="destinationField" promptText="e.g., Mumbai" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4" alignment="BOTTOM_LEFT">
+                            <children>
+                                <Region VBox.vgrow="ALWAYS" />
+                                <Button text="🔍 Search Trains" onAction="#handleSearchTrains" prefHeight="35" />
+                                <Button text="🔄 Show All" onAction="#handleShowAll" prefHeight="35" styleClass="button secondary" />
+                            </children>
+                        </VBox>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+        
+        <!-- Results Section -->
+        <VBox spacing="8" VBox.vgrow="ALWAYS">
+            <children>
+                <HBox alignment="CENTER_LEFT" spacing="8">
+                    <children>
+                        <Label text="Available Trains" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label fx:id="resultsCountLabel" text="" />
+                    </children>
+                </HBox>
+                <TableView fx:id="table" VBox.vgrow="ALWAYS">
+                    <columns>
+                        <TableColumn fx:id="idCol" text="Train ID" prefWidth="100" />
+                        <TableColumn fx:id="nameCol" text="Train Name" prefWidth="200" />
+                        <TableColumn fx:id="routeCol" text="Route" prefWidth="250" />
+                        <TableColumn fx:id="fareCol" text="Fare (Rs.)" prefWidth="120" />
+                        <TableColumn fx:id="seatsCol" text="Available Seats" prefWidth="130" />
+                        <TableColumn fx:id="actionCol" text="Action" prefWidth="100" />
+                    </columns>
+                </TableView>
+                <Label text="💡 Tip: Leave search fields empty and click 'Show All' to view all available trains" 
+                       styleClass="hero-subtitle" 
+                       wrapText="true" />
+            </children>
+        </VBox>
+    </children>
+</VBox>========== src/main/resources/fxml/AdminDashboard.fxml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<HBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.AdminDashboardController" prefWidth="1200" prefHeight="800">
+    <children>
+        <!-- Sidebar Navigation -->
+        <VBox spacing="16" prefWidth="280" styleClass="admin-sidebar">
+            <children>
+                <Label text="⚙️ Admin Panel" styleClass="hero-title" />
+                <Separator />
+                <Label text="Quick Actions" styleClass="section-title" />
+                <VBox spacing="10">
+                    <children>
+                        <Button text="📊 System Statistics" onAction="#handleViewStats" prefWidth="250" />
+                        <Button text="🚂 All Trains" onAction="#handleViewAllTrains" prefWidth="250" />
+                        <Button text="➕ Add New Train" onAction="#handleAddTrain" prefWidth="250" />
+                        <Button text="🎫 All Bookings" onAction="#handleViewAllBookings" prefWidth="250" />
+                        <Button text="💰 Revenue Analytics" onAction="#handleRevenueAnalytics" prefWidth="250" />
+                        <Button text="📈 Daily Reports" onAction="#handleDailyReports" prefWidth="250" />
+                    </children>
+                </VBox>
+                <Region VBox.vgrow="ALWAYS" />
+                <Separator />
+                <Label text="💡 Tip: Use the menu to navigate between different admin functions" 
+                       styleClass="hero-subtitle" 
+                       wrapText="true" />
+            </children>
+        </VBox>
+        
+        <!-- Main Content Area -->
+        <ScrollPane HBox.hgrow="ALWAYS" fitToWidth="true">
+            <VBox fx:id="contentArea" spacing="16" styleClass="card">
+                <children>
+                    <Label text="Welcome to Admin Dashboard" styleClass="section-title" />
+                    <Label text="Select an option from the sidebar to get started" styleClass="hero-subtitle" />
+                </children>
+            </VBox>
+        </ScrollPane>
+    </children>
+</HBox>========== src/main/resources/fxml/BookingView.fxml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="16" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.BookingController" prefWidth="550" styleClass="card">
+    <children>
+        <Label text="Book Tickets" styleClass="hero-title" />
+        <Label fx:id="trainLabel" text="Train: " styleClass="section-title" />
+        <Separator />
+        <GridPane hgap="8" vgap="8">
+            <children>
+                <Label text="Name" GridPane.rowIndex="0" GridPane.columnIndex="0" />
+                <TextField fx:id="nameField" GridPane.rowIndex="0" GridPane.columnIndex="1" />
+                <Label text="Age" GridPane.rowIndex="1" GridPane.columnIndex="0" />
+                <TextField fx:id="ageField" GridPane.rowIndex="1" GridPane.columnIndex="1" />
+                <Label text="Email" GridPane.rowIndex="2" GridPane.columnIndex="0" />
+                <TextField fx:id="emailField" GridPane.rowIndex="2" GridPane.columnIndex="1" />
+                <Label text="Phone" GridPane.rowIndex="3" GridPane.columnIndex="0" />
+                <TextField fx:id="phoneField" GridPane.rowIndex="3" GridPane.columnIndex="1" />
+                <Label text="Tickets" GridPane.rowIndex="4" GridPane.columnIndex="0" />
+                <Spinner fx:id="ticketsSpinner" GridPane.rowIndex="4" GridPane.columnIndex="1" />
+                <Label text="Wallet" GridPane.rowIndex="5" GridPane.columnIndex="0" />
+                <TextField fx:id="walletField" GridPane.rowIndex="5" GridPane.columnIndex="1" />
+            </children>
+        </GridPane>
+        <Label fx:id="totalLabel" text="Total: Rs. 0.00" />
+        <HBox spacing="8">
+            <children>
+                <Button text="Confirm" onAction="#handleConfirmBooking" />
+                <Button text="Cancel" onAction="#handleCancel" />
+            </children>
+        </HBox>
+        <Label fx:id="errorLabel" textFill="red" />
+    </children>
+</VBox>
+
+
+========== src/main/resources/database.properties ==========
+# Database Configuration Properties (PostgreSQL)
+db.url=jdbc:postgresql://localhost:5432/railway_db
+db.username=root
+db.password=secret
+db.driver=org.postgresql.Driver
+
+# Connection pool settings
+db.pool.initialSize=5
+db.pool.maxActive=20
+db.pool.maxIdle=10
+db.pool.minIdle=5
+
+# Connection timeout settings
+db.connection.timeout=30000
+db.query.timeout=60000========== src/main/resources/css/theme.css ==========
+/* ============================================
+   Modern Railway Reservation System Theme
+   Stylish, Clean, and Professional
+   ============================================ */
+
+/* Global Root Styles */
+.root, root {
+    -fx-font-family: "SF Pro Display", "Segoe UI", "Inter", "Roboto", sans-serif;
+    -fx-font-size: 14px;
+    -fx-background-color: linear-gradient(to bottom right, #0a0e27, #1a1f3a, #2d1b4e);
+    -fx-base: #1e1e2e;
+}
+
+/* ============================================
+   CARDS & CONTAINERS (Glassmorphism Effect)
+   ============================================ */
+.card {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-background-radius: 20px;
+    -fx-padding: 24px;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-width: 1px;
+    -fx-border-radius: 20px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.4), 25, 0.3, 0, 8);
+}
+
+.card:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.12);
+    -fx-border-color: rgba(255, 255, 255, 0.2);
+    -fx-effect: dropshadow(gaussian, rgba(58, 134, 247, 0.3), 30, 0.4, 0, 10);
+}
+
+/* ============================================
+   TYPOGRAPHY & LABELS
+   ============================================ */
+.label {
+    -fx-text-fill: #E8EAF6;
+    -fx-font-weight: normal;
+}
+
+.hero-title {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 36px;
+    -fx-font-weight: 700;
+    -fx-effect: dropshadow(gaussian, rgba(58, 134, 247, 0.5), 0, 0, 0, 2);
+    -fx-padding: 0 0 8px 0;
+}
+
+.hero-subtitle {
+    -fx-text-fill: #B0BEC5;
+    -fx-font-size: 16px;
+    -fx-font-weight: 300;
+    -fx-padding: 0 0 24px 0;
+}
+
+/* Section Headers */
+.section-title {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 24px;
+    -fx-font-weight: 600;
+    -fx-padding: 16px 0 12px 0;
+}
+
+/* ============================================
+   BUTTONS (Modern & Vibrant)
+   ============================================ */
+.button {
+    -fx-background-color: linear-gradient(to bottom, #6366f1, #4f46e5);
+    -fx-text-fill: #FFFFFF;
+    -fx-font-weight: 600;
+    -fx-font-size: 14px;
+    -fx-background-radius: 12px;
+    -fx-border-radius: 12px;
+    -fx-padding: 12px 24px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(99, 102, 241, 0.4), 10, 0.3, 0, 3);
+    -fx-background-insets: 0;
+}
+
+.button:hover {
+    -fx-background-color: linear-gradient(to bottom, #7c3aed, #6366f1);
+    -fx-effect: dropshadow(gaussian, rgba(124, 58, 237, 0.5), 15, 0.4, 0, 5);
+    -fx-scale-x: 1.02;
+    -fx-scale-y: 1.02;
+}
+
+.button:pressed {
+    -fx-background-color: linear-gradient(to bottom, #4f46e5, #4338ca);
+    -fx-effect: dropshadow(gaussian, rgba(99, 102, 241, 0.3), 8, 0.2, 0, 2);
+    -fx-scale-x: 0.98;
+    -fx-scale-y: 0.98;
+}
+
+.button.secondary {
+    -fx-background-color: transparent;
+    -fx-border-color: #6366f1;
+    -fx-border-width: 2px;
+    -fx-text-fill: #a5b4fc;
+    -fx-effect: dropshadow(gaussian, rgba(99, 102, 241, 0.2), 5, 0.2, 0, 2);
+}
+
+.button.secondary:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.1);
+    -fx-border-color: #818cf8;
+    -fx-text-fill: #c7d2fe;
+}
+
+.button.secondary:pressed {
+    -fx-background-color: rgba(99, 102, 241, 0.2);
+}
+
+/* Danger/Delete Button */
+.button.danger {
+    -fx-background-color: linear-gradient(to bottom, #ef4444, #dc2626);
+}
+
+.button.danger:hover {
+    -fx-background-color: linear-gradient(to bottom, #f87171, #ef4444);
+}
+
+/* ============================================
+   INPUT FIELDS (Elegant & Focused)
+   ============================================ */
+.text-field, .spinner, .combo-box, .date-picker, text-area {
+    -fx-background-color: rgba(30, 30, 46, 0.8);
+    -fx-background-radius: 10px;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-width: 1.5px;
+    -fx-border-radius: 10px;
+    -fx-text-fill: #E8EAF6;
+    -fx-prompt-text-fill: #64748b;
+    -fx-padding: 10px 14px;
+    -fx-font-size: 14px;
+}
+
+.text-field:focused, .spinner:focused, .combo-box:focused, .date-picker:focused, text-area:focused {
+    -fx-background-color: rgba(30, 30, 46, 0.95);
+    -fx-border-color: #6366f1;
+    -fx-effect: dropshadow(gaussian, rgba(99, 102, 241, 0.4), 12, 0.4, 0, 0);
+}
+
+.text-field:hover, .spinner:hover, .combo-box:hover, .date-picker:hover {
+    -fx-border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Text Area */
+text-area {
+    -fx-background-color: rgba(30, 30, 46, 0.8);
+    -fx-text-fill: #E8EAF6;
+    -fx-background-radius: 12px;
+    -fx-border-radius: 12px;
+}
+
+text-area .content {
+    -fx-background-color: transparent;
+}
+
+/* ============================================
+   TABLES (Modern & Readable)
+   ============================================ */
+.table-view {
+    -fx-background-color: transparent;
+    -fx-background-radius: 16px;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: linear-gradient(to bottom, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0.1));
+    -fx-background-radius: 16px 16px 0 0;
+    -fx-padding: 8px;
+}
+
+.table-view .column-header {
+    -fx-background-color: transparent;
+    -fx-size: 40px;
+    -fx-border-color: transparent;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #c7d2fe;
+    -fx-font-weight: 600;
+    -fx-font-size: 13px;
+    -fx-alignment: center-left;
+}
+
+.table-row-cell {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 4px;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: rgba(255, 255, 255, 0.03);
+}
+
+.table-row-cell:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.15);
+}
+
+.table-row-cell:selected {
+    -fx-background-color: linear-gradient(to right, rgba(99, 102, 241, 0.3), rgba(99, 102, 241, 0.2));
+    -fx-text-background-color: #FFFFFF;
+}
+
+.table-view .filler {
+    -fx-background-color: transparent;
+}
+
+/* ============================================
+   MENU BAR
+   ============================================ */
+.menu-bar {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-width: 0 0 1px 0;
+}
+
+.menu {
+    -fx-background-color: transparent;
+}
+
+.menu:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.2);
+}
+
+.menu .label {
+    -fx-text-fill: #E8EAF6;
+    -fx-font-weight: 500;
+}
+
+/* ============================================
+   TAB PANE
+   ============================================ */
+.tab-pane {
+    -fx-background-color: transparent;
+    -fx-tab-min-width: 120px;
+    -fx-tab-min-height: 40px;
+}
+
+.tab-pane .tab-header-area {
+    -fx-background-color: transparent;
+}
+
+.tab-pane .tab-header-background {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-background-radius: 12px 12px 0 0;
+}
+
+.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 12px 12px 0 0;
+    -fx-border-color: transparent;
+    -fx-padding: 8px 20px;
+}
+
+.tab-pane .tab:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.15);
+}
+
+.tab-pane .tab:selected {
+    -fx-background-color: rgba(99, 102, 241, 0.25);
+    -fx-text-base-color: #FFFFFF;
+}
+
+.tab-pane .tab .tab-label {
+    -fx-text-fill: #B0BEC5;
+    -fx-font-weight: 500;
+}
+
+.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: #FFFFFF;
+    -fx-font-weight: 600;
+}
+
+/* ============================================
+   SCROLL PANE
+   ============================================ */
+.scroll-pane {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane .viewport {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-background-radius: 8px;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: rgba(99, 102, 241, 0.5);
+    -fx-background-radius: 8px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.7);
+}
+
+/* ============================================
+   SEPARATOR
+   ============================================ */
+.separator {
+    -fx-background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   ALERTS & DIALOGS
+   ============================================ */
+.dialog-pane {
+    -fx-background-color: rgba(30, 30, 46, 0.95);
+    -fx-background-radius: 16px;
+    -fx-border-color: rgba(99, 102, 241, 0.3);
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 20, 0.5, 0, 10);
+}
+
+.dialog-pane .label {
+    -fx-text-fill: #E8EAF6;
+}
+
+.dialog-pane .button {
+    -fx-background-color: linear-gradient(to bottom, #6366f1, #4f46e5);
+    -fx-text-fill: #FFFFFF;
+    -fx-background-radius: 8px;
+    -fx-padding: 8px 20px;
+}
+
+.dialog-pane .button:hover {
+    -fx-background-color: linear-gradient(to bottom, #7c3aed, #6366f1);
+}
+
+/* ============================================
+   STATUS COLORS
+   ============================================ */
+.status-confirmed {
+    -fx-text-fill: #10b981;
+    -fx-font-weight: 600;
+}
+
+.status-cancelled {
+    -fx-text-fill: #ef4444;
+    -fx-font-weight: 600;
+}
+
+.status-pending {
+    -fx-text-fill: #f59e0b;
+    -fx-font-weight: 600;
+}
+
+/* ============================================
+   ERROR & VALIDATION
+   ============================================ */
+.error {
+    -fx-text-fill: #f87171;
+    -fx-font-size: 13px;
+    -fx-font-weight: 500;
+}
+
+.text-field.error {
+    -fx-border-color: #ef4444;
+    -fx-effect: dropshadow(gaussian, rgba(239, 68, 68, 0.4), 10, 0.4, 0, 0);
+}
+
+/* ============================================
+   ADMIN PANEL SPECIFIC
+   ============================================ */
+.admin-sidebar {
+    -fx-background-color: rgba(30, 30, 46, 0.6);
+    -fx-background-radius: 16px;
+    -fx-padding: 16px;
+}
+
+.admin-content {
+    -fx-background-color: transparent;
+}
+
+/* ============================================
+   STATISTICS CARDS
+   ============================================ */
+.stat-card {
+    -fx-background-color: rgba(99, 102, 241, 0.1);
+    -fx-background-radius: 16px;
+    -fx-padding: 20px;
+    -fx-border-color: rgba(99, 102, 241, 0.3);
+    -fx-border-width: 1px;
+    -fx-border-radius: 16px;
+}
+
+.stat-card:hover {
+    -fx-background-color: rgba(99, 102, 241, 0.15);
+    -fx-border-color: rgba(99, 102, 241, 0.5);
+}
+
+.stat-value {
+    -fx-text-fill: #a5b4fc;
+    -fx-font-size: 32px;
+    -fx-font-weight: 700;
+}
+
+.stat-label {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 14px;
+    -fx-font-weight: 500;
+}
+
+/* ============================================
+   GRID PANE & LAYOUTS
+   ============================================ */
+.grid-pane {
+    -fx-background-color: transparent;
+}
+
+/* ============================================
+   ANIMATIONS & TRANSITIONS
+   ============================================ */
+/* Note: JavaFX CSS doesn't support animations directly,
+   but we use hover effects for visual feedback */
+
+/* ============================================
+   MISCELLANEOUS
+   ============================================ */
+.check-box {
+    -fx-text-fill: #E8EAF6;
+}
+
+.radio-button {
+    -fx-text-fill: #E8EAF6;
+}
+
+.tooltip {
+    -fx-background-color: rgba(30, 30, 46, 0.95);
+    -fx-text-fill: #E8EAF6;
+    -fx-background-radius: 8px;
+    -fx-padding: 8px 12px;
+    -fx-font-size: 12px;
+    -fx-border-color: rgba(99, 102, 241, 0.3);
+    -fx-border-width: 1px;
+    -fx-border-radius: 8px;
+}
+
+/* ============================================
+   ENHANCED LAYOUT COMPONENTS
+   ============================================ */
+.region {
+    -fx-background-color: transparent;
+}
+
+/* Search Section Styling */
+.search-section {
+    -fx-background-color: rgba(99, 102, 241, 0.05);
+    -fx-background-radius: 12px;
+    -fx-padding: 20px;
+    -fx-border-color: rgba(99, 102, 241, 0.2);
+    -fx-border-width: 1px;
+    -fx-border-radius: 12px;
+}
+
+/* Results Count */
+.results-count {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 13px;
+    -fx-font-weight: 500;
+}
+
+/* Action Buttons in Tables */
+.table-view .button {
+    -fx-background-color: linear-gradient(to bottom, #6366f1, #4f46e5);
+    -fx-text-fill: #FFFFFF;
+    -fx-font-size: 12px;
+    -fx-padding: 6px 14px;
+    -fx-background-radius: 8px;
+    -fx-border-radius: 8px;
+    -fx-effect: dropshadow(gaussian, rgba(99, 102, 241, 0.3), 5, 0.2, 0, 2);
+}
+
+.table-view .button:hover {
+    -fx-background-color: linear-gradient(to bottom, #7c3aed, #6366f1);
+    -fx-effect: dropshadow(gaussian, rgba(124, 58, 237, 0.4), 8, 0.3, 0, 3);
+}
+
+/* Enhanced Admin Sidebar */
+.admin-sidebar {
+    -fx-background-color: rgba(30, 30, 46, 0.7);
+    -fx-background-radius: 20px;
+    -fx-padding: 24px;
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-border-width: 1px;
+    -fx-border-radius: 20px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 15, 0.3, 0, 5);
+}
+
+.admin-sidebar .button {
+    -fx-alignment: center-left;
+    -fx-padding: 14px 20px;
+    -fx-text-alignment: left;
+}
+
+/* Content Area Enhancements */
+.content-section {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-background-radius: 16px;
+    -fx-padding: 20px;
+}
+
+/* Enhanced Text Area for Confirmations */
+text-area.confirmation {
+    -fx-background-color: rgba(30, 30, 46, 0.9);
+    -fx-text-fill: #E8EAF6;
+    -fx-font-family: "Courier New", monospace;
+    -fx-font-size: 13px;
+}
+
+/* Info/Help Labels */
+.info-label {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+    -fx-font-style: italic;
+}
+
+/* Empty State */
+.empty-state {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 16px;
+    -fx-alignment: center;
+}
+========== src/main/resources/application.properties ==========
+# Application Configuration Properties
+
+# Application Information
+app.name=Railway Reservation System
+app.version=1.0.0
+app.description=A Java Railway Reservation System demonstrating concurrency, GUI, and database connectivity
+
+# File System Settings
+app.data.directory=data
+app.backup.enabled=true
+app.serialization.enabled=true
+
+# Logging Configuration
+app.logging.level=INFO
+app.logging.file=data/logs/application.log
+
+# Booking Settings
+booking.max.tickets.per.booking=10
+booking.min.tickets.per.booking=1
+booking.confirmation.timeout=300000
+
+# GUI Settings
+gui.theme=default
+gui.window.width=1200
+gui.window.height=800
+gui.window.resizable=true
+
+# Database Settings
+database.auto.create=true
+database.sample.data.load=true
+
+# Concurrency Settings
+threading.max.concurrent.bookings=50
+threading.booking.timeout=30000
+threading.deadlock.detection.enabled=true========== ./pom.xml ==========
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.railway</groupId>
+    <artifactId>railway-reservation-system</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Railway Reservation System</name>
+    <description>A Java Railway Reservation System demonstrating concurrency, GUI, and database connectivity</description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <javafx.version>17.0.2</javafx.version>
+        <mysql.version>8.0.33</mysql.version>
+    </properties>
+
+    <dependencies>
+        <!-- JavaFX Controls -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
+        <!-- JavaFX FXML -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-fxml</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+
+        <!-- PostgreSQL Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.4</version>
+        </dependency>
+
+        <!-- JUnit for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.9.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>11</source>
+                    <target>11</target>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>0.0.8</version>
+                <configuration>
+                    <mainClass>com.railway.gui.MainApp</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+========== ./PRD.md ==========
+# Railway Reservation System — Concise PRD
+
+## 1. Overview
+A Java-based Railway Reservation System showcasing: concurrency and synchronization, robust exception handling, file I/O and object serialization, JavaFX GUI, collections/streams usage, and JDBC database connectivity.
+
+## 2. Technology Stack
+- Language: Java 11+
+- GUI: JavaFX 17+
+- Database: MySQL 8+ (or PostgreSQL 13+)
+- Build: Maven
+- Libraries: JDBC Driver, JavaFX, Java Collections/Streams
+
+## 3. Core Functional Requirements
+1) Robustness and Concurrency
+- Multiple passengers can attempt to book seats on the same train simultaneously.
+- Use multithreading to simulate concurrent booking requests.
+- Synchronize seat updates to prevent inconsistent ticket counts (no oversell).
+- Demonstrate a deadlock (train lock vs payment lock acquired in opposite orders), then resolve via lock ordering or timed locks.
+- Use exception handling (try/catch/finally, throw/throws, custom exceptions) for invalid bookings (zero/negative tickets, insufficient balance, invalid passenger data).
+
+2) Files, Streams, and Object Serialization
+- Store passenger details and booking confirmations in files under `data/`.
+- Serialize/deserialize Booking objects for persistence and backup.
+- Use Collections (List, Map, Set, Generics) and Streams/Lambdas for schedules, passengers, and booking history queries.
+
+3) GUI Programming and Database Connectivity
+- JavaFX screens to: view trains, enter passenger details, book tickets, and view confirmations.
+- Event handling with form validation (name, age, email, phone, tickets range, balance sufficient).
+- JDBC for fetching/storing trains, passengers, and bookings.
+
+## 4. Minimal Domain Model
+- Train: id, name, source, destination, totalSeats, availableSeats, fare, departureTime.
+- Passenger: id (auto), name, age, email, phone, walletBalance.
+- Booking: id (auto), passenger, train, numberOfTickets, totalAmount, bookingDate, status [CONFIRMED|CANCELLED|PENDING].
+
+## 5. Custom Exceptions
+- InvalidBookingException, InsufficientBalanceException, InsufficientSeatsException, TrainNotFoundException, DatabaseConnectionException.
+
+## 6. Database (Essential Tables)
+- trains(train_id PK, train_name, source, destination, total_seats, available_seats, fare, departure_time)
+- passengers(passenger_id PK, name, age, email UNIQUE, phone, wallet_balance)
+- bookings(booking_id PK, passenger_id FK, train_id FK, number_of_tickets, total_amount, booking_date, status)
+
+Note: Provide a lightweight `schema.sql` with a few sample rows.
+
+## 7. Concurrency and Deadlock
+- Seat updates protected via synchronized blocks or ReentrantLocks.
+- Deadlock demo: two agents lock train then payment vs payment then train.
+- Resolution: global lock ordering (always Train -> Payment) or `tryLock(timeout)` fallback.
+
+## 8. File I/O and Serialization
+- Serialize each Booking to `data/bookings/booking_<id>.ser`.
+- Write human-readable confirmations to `data/reports/booking_confirmations.txt`.
+- Restore bookings by deserializing on startup (optional toggle).
+
+## 9. Collections and Streams (Examples)
+- Train schedule in Map<String, Train> for O(1) lookup by id.
+- Filter trains by route, sort by fare, group by source using Streams.
+- Compute totals (revenue), top trains, and passenger histories via Stream pipelines.
+
+## 10. GUI (Minimum Screens)
+- Search Trains: source, destination, date, results table, Book action.
+- Booking: passenger form, ticket count, live total, confirm button.
+- Confirmations/History: list of bookings with status and details.
+
+## 11. Acceptance Criteria
+- Concurrency-safe booking: no overselling; final seat counts consistent under load.
+- Deadlock scenario reproduced and resolved; logs show both cases.
+- Invalid bookings handled with clear messages and custom exceptions.
+- Booking objects serialized/deserialized; confirmations written to files.
+- Collections/Streams used for schedule and analytics operations.
+- GUI flows: view trains → fill form → book → see confirmation.
+- JDBC CRUD works for trains, passengers, bookings; resources closed safely.
+
+## 12. Deliverables (Phase-wise)
+- Phase 1: Models, exceptions, schema, configs, compile/run.
+- Phase 2: JDBC connection manager, DAO interfaces/impl, basic CRUD.
+- Phase 3: Thread-safe booking service, deadlock demo and fix, simulator.
+- Phase 4: Serialization manager, file writes/reads, simple reports.
+- Phase 5: Collections/Streams utilities and analytics.
+- Phase 6: JavaFX views/controllers wiring to services/DAO.
+
+## 13. Non-Functional (Lightweight)
+- Clear logs for concurrency and errors.
+- Simple configuration via `application.properties` and `database.properties`.
+- Code readability, proper resource management (try-with-resources).========== ./schema.sql ==========
+-- Railway Reservation System Database Schema
+-- Essential tables with sample data
+
+-- Drop tables if they exist (for clean setup)
+DROP TABLE IF EXISTS bookings;
+DROP TABLE IF EXISTS passengers;
+DROP TABLE IF EXISTS trains;
+
+-- Create trains table
+CREATE TABLE trains (
+    train_id VARCHAR(20) PRIMARY KEY,
+    train_name VARCHAR(100) NOT NULL,
+    source VARCHAR(100) NOT NULL,
+    destination VARCHAR(100) NOT NULL,
+    total_seats INT NOT NULL,
+    available_seats INT NOT NULL,
+    fare DECIMAL(10,2) NOT NULL,
+    departure_time TIMESTAMP NOT NULL
+);
+
+-- Create passengers table
+CREATE TABLE passengers (
+    passenger_id VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    age INT NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    phone VARCHAR(15),
+    wallet_balance DECIMAL(10,2) DEFAULT 0.00
+);
+
+-- Create bookings table
+CREATE TABLE bookings (
+    booking_id VARCHAR(20) PRIMARY KEY,
+    passenger_id VARCHAR(20) NOT NULL,
+    train_id VARCHAR(20) NOT NULL,
+    number_of_tickets INT NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL,
+    booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'CONFIRMED',
+    FOREIGN KEY (passenger_id) REFERENCES passengers(passenger_id) ON DELETE CASCADE,
+    FOREIGN KEY (train_id) REFERENCES trains(train_id) ON DELETE CASCADE
+);
+
+-- Insert sample train data
+INSERT INTO trains VALUES 
+('T001', 'Rajdhani Express', 'Delhi', 'Mumbai', 100, 100, 1500.00, '2025-11-01 08:00:00'),
+('T002', 'Shatabdi Express', 'Chennai', 'Bangalore', 80, 80, 800.00, '2025-11-01 10:00:00'),
+('T003', 'Duronto Express', 'Kolkata', 'Delhi', 120, 120, 1200.00, '2025-11-01 09:30:00'),
+('T004', 'Garib Rath', 'Mumbai', 'Goa', 150, 150, 500.00, '2025-11-01 11:15:00'),
+('T005', 'Vande Bharat', 'Delhi', 'Varanasi', 90, 90, 2000.00, '2025-11-01 12:30:00');
+
+-- Insert sample passenger data
+INSERT INTO passengers VALUES 
+('P12345678', 'John Doe', 35, 'john.doe@email.com', '9876543210', 5000.00),
+('P87654321', 'Jane Smith', 28, 'jane.smith@email.com', '9876543211', 3000.00),
+('P11223344', 'Raj Kumar', 42, 'raj.kumar@email.com', '9876543212', 7500.00),
+('P55667788', 'Priya Sharma', 25, 'priya.sharma@email.com', '9876543213', 2000.00),
+('P99887766', 'Amit Patel', 38, 'amit.patel@email.com', '9876543214', 4000.00);
+
+-- Insert sample booking data
+INSERT INTO bookings VALUES 
+('B12345678', 'P12345678', 'T001', 2, 3000.00, '2025-10-29 10:30:00', 'CONFIRMED'),
+('B87654321', 'P87654321', 'T002', 1, 800.00, '2025-10-29 11:15:00', 'CONFIRMED'),
+('B11223344', 'P11223344', 'T003', 3, 3600.00, '2025-10-29 12:00:00', 'CONFIRMED'),
+('B55667788', 'P55667788', 'T004', 1, 500.00, '2025-10-29 13:45:00', 'CONFIRMED'),
+('B99887766', 'P99887766', 'T005', 2, 4000.00, '2025-10-29 14:20:00', 'CONFIRMED');
+
+-- Update available seats based on bookings
+UPDATE trains SET available_seats = available_seats - 2 WHERE train_id = 'T001';
+UPDATE trains SET available_seats = available_seats - 1 WHERE train_id = 'T002';
+UPDATE trains SET available_seats = available_seats - 3 WHERE train_id = 'T003';
+UPDATE trains SET available_seats = available_seats - 1 WHERE train_id = 'T004';
+UPDATE trains SET available_seats = available_seats - 2 WHERE train_id = 'T005';
+
+-- Create indexes for better performance
+CREATE INDEX idx_trains_source_destination ON trains(source, destination);
+CREATE INDEX idx_trains_departure_time ON trains(departure_time);
+CREATE INDEX idx_passengers_email ON passengers(email);
+CREATE INDEX idx_bookings_passenger_id ON bookings(passenger_id);
+CREATE INDEX idx_bookings_train_id ON bookings(train_id);
+CREATE INDEX idx_bookings_booking_date ON bookings(booking_date);

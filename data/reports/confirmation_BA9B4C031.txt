@@ -1,0 +1,12 @@
+========================================
+        BOOKING CONFIRMATION
+========================================
+Booking ID    : BA9B4C031
+Passenger     : abcdef
+Train         : Garib Rath (T004)
+Route         : Mumbai -> Goa
+Tickets       : 1
+Amount Paid   : Rs. 500.00
+Booking Date  : 2025-10-29 15:14:33
+Status        : Confirmed
+========================================

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.BookingHistoryController" prefWidth="950" prefHeight="750" styleClass="card">
+    <children>
+        <Label text="📋 Booking History" styleClass="hero-title" />
+        <Label text="View your booking details, confirmations, and manage your reservations" styleClass="hero-subtitle" />
+        <Separator />
+        
+        <!-- Search Section -->
+        <VBox spacing="12" styleClass="card">
+            <children>
+                <Label text="Search Bookings" styleClass="section-title" />
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="Passenger ID" />
+                                <TextField fx:id="passengerIdField" promptText="e.g., P12345678" prefWidth="180" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4">
+                            <children>
+                                <Label text="or Email" />
+                                <TextField fx:id="emailField" promptText="e.g., user@email.com" prefWidth="200" />
+                            </children>
+                        </VBox>
+                        <VBox spacing="4" alignment="BOTTOM_LEFT">
+                            <children>
+                                <Region VBox.vgrow="ALWAYS" />
+                                <Button text="🔍 Load Bookings" onAction="#handleLoad" prefHeight="35" />
+                            </children>
+                        </VBox>
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+        
+        <!-- Bookings Table -->
+        <VBox spacing="12" VBox.vgrow="ALWAYS">
+            <children>
+                <HBox spacing="12" alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="Your Bookings" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button text="📄 View Confirmation" onAction="#handleViewConfirmation" styleClass="button secondary" />
+                        <Button text="❌ Cancel Booking" onAction="#handleCancelBooking" styleClass="button secondary" />
+                    </children>
+                </HBox>
+                <TableView fx:id="table" VBox.vgrow="ALWAYS" prefHeight="300">
+                    <columns>
+                        <TableColumn fx:id="idCol" text="Booking ID" prefWidth="150" />
+                        <TableColumn fx:id="trainCol" text="Train" prefWidth="180" />
+                        <TableColumn fx:id="dateCol" text="Booking Date" prefWidth="180" />
+                        <TableColumn fx:id="ticketsCol" text="Tickets" prefWidth="80" />
+                        <TableColumn fx:id="amountCol" text="Amount" prefWidth="120" />
+                        <TableColumn fx:id="statusCol" text="Status" prefWidth="120" />
+                    </columns>
+                </TableView>
+            </children>
+        </VBox>
+        
+        <!-- Confirmation Preview -->
+        <VBox spacing="8">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="📄 Confirmation Details" styleClass="section-title" />
+                        <Region HBox.hgrow="ALWAYS" />
+                    </children>
+                </HBox>
+                <TextArea fx:id="confirmationArea" prefRowCount="8" wrapText="true" editable="false" 
+                          styleClass="card" />
+            </children>
+        </VBox>
+    </children>
+</VBox>

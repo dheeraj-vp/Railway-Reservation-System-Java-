@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.MainController">
+    <top>
+        <MenuBar>
+            <menus>
+                <Menu text="Home" />
+                <Menu text="Bookings" />
+                <Menu text="Admin" />
+            </menus>
+        </MenuBar>
+    </top>
+    <center>
+        <VBox spacing="16" alignment="CENTER" styleClass="card" prefWidth="800">
+            <children>
+                <Label text="Railway Reservation System" styleClass="hero-title" />
+                <Label text="Search trains, make bookings, and view confirmations" styleClass="hero-subtitle" />
+                <HBox spacing="12" alignment="CENTER">
+                    <children>
+                        <Button text="Search Trains" onAction="#handleOpenSearch" />
+                        <Button text="Booking History" onAction="#handleOpenHistory" styleClass="button secondary" />
+                        <Button text="Admin Panel" onAction="#handleOpenAdmin" styleClass="button secondary" />
+                    </children>
+                </HBox>
+            </children>
+        </VBox>
+    </center>
+</BorderPane>
+
+

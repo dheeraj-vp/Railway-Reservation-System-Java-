@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<HBox spacing="20" xmlns:fx="http://javafx.com/fxml" fx:controller="com.railway.gui.AdminDashboardController" prefWidth="1200" prefHeight="800">
+    <children>
+        <!-- Sidebar Navigation -->
+        <VBox spacing="16" prefWidth="280" styleClass="admin-sidebar">
+            <children>
+                <Label text="⚙️ Admin Panel" styleClass="hero-title" />
+                <Separator />
+                <Label text="Quick Actions" styleClass="section-title" />
+                <VBox spacing="10">
+                    <children>
+                        <Button text="📊 System Statistics" onAction="#handleViewStats" prefWidth="250" />
+                        <Button text="🚂 All Trains" onAction="#handleViewAllTrains" prefWidth="250" />
+                        <Button text="➕ Add New Train" onAction="#handleAddTrain" prefWidth="250" />
+                        <Button text="🎫 All Bookings" onAction="#handleViewAllBookings" prefWidth="250" />
+                        <Button text="💰 Revenue Analytics" onAction="#handleRevenueAnalytics" prefWidth="250" />
+                        <Button text="📈 Daily Reports" onAction="#handleDailyReports" prefWidth="250" />
+                    </children>
+                </VBox>
+                <Region VBox.vgrow="ALWAYS" />
+                <Separator />
+                <Label text="💡 Tip: Use the menu to navigate between different admin functions" 
+                       styleClass="hero-subtitle" 
+                       wrapText="true" />
+            </children>
+        </VBox>
+        
+        <!-- Main Content Area -->
+        <ScrollPane HBox.hgrow="ALWAYS" fitToWidth="true">
+            <VBox fx:id="contentArea" spacing="16" styleClass="card">
+                <children>
+                    <Label text="Welcome to Admin Dashboard" styleClass="section-title" />
+                    <Label text="Select an option from the sidebar to get started" styleClass="hero-subtitle" />
+                </children>
+            </VBox>
+        </ScrollPane>
+    </children>
+</HBox>

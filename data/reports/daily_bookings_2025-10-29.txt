@@ -1,0 +1,19 @@
+===== Daily Booking Summary - 2025-10-29 =====
+Total bookings: 15
+Total revenue : Rs. 21000.00
+
+BD7977049 | null | null | 1 tickets | Rs. 500.00 | Confirmed
+B1234EC0D | null | null | 1 tickets | Rs. 800.00 | Cancelled
+BC99AD7D8 | null | null | 1 tickets | Rs. 800.00 | Cancelled
+B9912D886 | null | null | 1 tickets | Rs. 500.00 | Cancelled
+B5453C68F | null | null | 1 tickets | Rs. 500.00 | Confirmed
+B9F48BED4 | null | null | 1 tickets | Rs. 500.00 | Confirmed
+BA9B4C031 | null | null | 1 tickets | Rs. 500.00 | Confirmed
+BA78D4CE3 | null | null | 1 tickets | Rs. 500.00 | Confirmed
+B99887766 | null | null | 2 tickets | Rs. 4000.00 | Confirmed
+B55667788 | null | null | 1 tickets | Rs. 500.00 | Confirmed
+B96E2F271 | null | null | 1 tickets | Rs. 1500.00 | Confirmed
+B5F931743 | null | null | 2 tickets | Rs. 3000.00 | Confirmed
+B11223344 | null | null | 3 tickets | Rs. 3600.00 | Confirmed
+B87654321 | null | null | 1 tickets | Rs. 800.00 | Confirmed
+B12345678 | null | null | 2 tickets | Rs. 3000.00 | Confirmed

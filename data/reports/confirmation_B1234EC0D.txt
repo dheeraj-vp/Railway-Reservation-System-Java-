@@ -1,0 +1,13 @@
+========================================
+        BOOKING CONFIRMATION
+========================================
+Booking ID    : B1234EC0D
+Passenger     : abcdefg
+Passenger ID  : P1BC890D3
+Train         : Shatabdi Express (T002)
+Route         : Chennai -> Bangalore
+Tickets       : 1
+Amount Paid   : Rs. 800.00
+Booking Date  : 2025-10-29 21:54:45
+Status        : Confirmed
+========================================

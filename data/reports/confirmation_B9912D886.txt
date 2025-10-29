@@ -1,0 +1,13 @@
+========================================
+        BOOKING CONFIRMATION
+========================================
+Booking ID    : B9912D886
+Passenger     : abcd
+Passenger ID  : P8692FF61
+Train         : Garib Rath (T004)
+Route         : Mumbai -> Goa
+Tickets       : 1
+Amount Paid   : Rs. 500.00
+Booking Date  : 2025-10-29 21:31:22
+Status        : Confirmed
+========================================

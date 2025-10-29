@@ -1,0 +1,12 @@
+========================================
+        BOOKING CONFIRMATION
+========================================
+Booking ID    : B5D48214D
+Passenger     : File Smoke
+Train         : Rajdhani Express (T001)
+Route         : Delhi -> Mumbai
+Tickets       : 1
+Amount Paid   : Rs. 1500.00
+Booking Date  : 2025-10-29 12:58:34
+Status        : Confirmed
+========================================
